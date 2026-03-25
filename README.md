@@ -26,4 +26,4 @@ CURRENT ISSUES WITH THE GAME
 AUDIO SOUNDS LIKE GARBAGE AT THIS TIME, IM HOPING A REXGLUE UPDATE FIXES THIS, OR I FIND A WAY TO FIX IT MYSELF
 
 
-IF YOU FIND ANY CRASHES PLEASE MAKE AN ISSUE EXPLAINING WHERE IT WAS AND WHAT YOU WERE DOING (i.e. went to shen-long, game crashed during loading or used pk ability on vehicle causing the game to crash)(no these dont happen ~~anymore~~ they're just examples)
+IF YOU FIND ANY CRASHES PLEASE MAKE AN ISSUE EXPLAINING WHERE IT WAS AND WHAT YOU WERE DOING (i.e. went to shen-long, game crashed during loading or used pk ability on vehicle causing the game to crash)(no these dont happen ~~anymore~~ they're just examples).
