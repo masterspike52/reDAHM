@@ -1,0 +1,8 @@
+# Auto-generated cvar configuration
+enable_console = false
+rexcrt_heap_enable = true
+log_level = "debug"
+log_file = "logs/DAHM.log"
+vsync = false
+execute_unclipped_draw_vs_on_cpu = true
+execute_unclipped_draw_vs_on_cpu_with_scissor = true
