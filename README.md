@@ -1,3 +1,31 @@
+
+<img width="1500" height="550" alt="ReDAHM_Logo" src="https://github.com/user-attachments/assets/8bb23711-d45c-486e-8a2f-9c314daa903c" />
+
+
+
+WHAT IS REDAHM???
+--------------------------
+reDAHM is a recompilation of Destroy all humans: Path of the Furon for the xbox360 using the REXGLUE-SDK 
+
+WHAT CAN BE DONE WITH IT OVER XENIA???
+--------------------------------------------
+quite literally anything as long as its within the means of C++, this means unlike xenia we can do things like enable the skins in the game (i.e. disco, biker, yellow jacket, etc). as long as it can be found in IDAPRO it can be changed in whatever way we want. 
+
+WILL THE RE-Enlighted MOD WORK????
+----------------------------------
+yes, i made sure to test it before releasing this. once the mod is released i will leave instructions on how to install the mod into reDAHM
+
+
+WHY reDAHM???
+--------------------------
+why not? initially the project was called POTFRecomp but i decided that name is a bit boring and long just to abbreviate Path of the Furon then add Recomp to the end, reDAHM is much nicer. 
+
+
+
+
+
+
+
 REQUIREMENTS
 
 US version of Destroy all Humas: Path of the Furon default.xex
