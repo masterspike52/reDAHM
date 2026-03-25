@@ -28,7 +28,7 @@ why not? initially the project was called POTFRecomp but i decided that name is 
 
 REQUIREMENTS
 
-US version of Destroy all Humas: Path of the Furon default.xex
+US version of Destroy all Humas: Path of the Furon default.xex and the assets for the game
 
 HOW TO BUILD
 ---------------------
@@ -55,3 +55,9 @@ AUDIO SOUNDS LIKE GARBAGE AT THIS TIME, IM HOPING A REXGLUE UPDATE FIXES THIS, O
 
 
 IF YOU FIND ANY CRASHES PLEASE MAKE AN ISSUE EXPLAINING WHERE IT WAS AND WHAT YOU WERE DOING (i.e. went to shen-long, game crashed during loading or used pk ability on vehicle causing the game to crash)(no these dont happen ~~anymore~~ they're just examples)
+
+CREDITS
+----------------------
+MaxDeadBear - for adding a handful of the CRT functions needed to make the game not crash while i was busy with another project
+Raoul - Making the logo
+DAHM team - for Re-Enlightened and knowing how to use UPK-Explorer
