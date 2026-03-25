@@ -18,7 +18,7 @@ HOW TO BUILD
 
 HOW TO USE
 --------------------
-for the time being until a launcher is completed all you must do is download the repo and go into out/build/win-amd64-relwithdebinfo and either put the assets folder with the dumped assets and default.xex in it or make a new folder somewhere and place the assets with the default.xex in there the only folder/files you should have are the kronosgame folder with its files and the default.xex
+for the time being until a launcher is completed all you must do is download the repo and go into out/build/win-amd64-relwithdebinfo and either put the assets folder with the dumped assets, redahm.toml, and the default.xex in it or make a new folder somewhere and place the assets with the default.xex in there the only folder/files you should have are the kronosgame folder with its files and the default.xex
 
 
 CURRENT ISSUES WITH THE GAME
