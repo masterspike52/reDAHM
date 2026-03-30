@@ -1,6 +1,34 @@
+
+<img width="1500" height="550" alt="ReDAHM_Logo" src="https://github.com/user-attachments/assets/8bb23711-d45c-486e-8a2f-9c314daa903c" />
+
+
+
+WHAT IS REDAHM???
+--------------------------
+reDAHM is a recompilation of Destroy all humans: Path of the Furon for the xbox360 using the REXGLUE-SDK 
+
+WHAT CAN BE DONE WITH IT OVER XENIA???
+--------------------------------------------
+quite literally anything as long as its within the means of C++, this means unlike xenia we can do things like enable the skins in the game (i.e. disco, biker, yellow jacket, etc). as long as it can be found in IDAPRO it can be changed in whatever way we want. 
+
+WILL THE RE-Enlighted MOD WORK????
+----------------------------------
+yes, i made sure to test it before releasing this. once the mod is released i will leave instructions on how to install the mod into reDAHM
+
+
+WHY reDAHM???
+--------------------------
+why not? initially the project was called POTFRecomp but i decided that name is a bit boring and long just to abbreviate Path of the Furon then add Recomp to the end, reDAHM is much nicer. 
+
+
+
+
+
+
+
 REQUIREMENTS
 
-US version of Destroy all Humas: Path of the Furon default.xex
+US version of Destroy all Humas: Path of the Furon default.xex and the assets for the game
 
 HOW TO BUILD
 ---------------------
@@ -18,7 +46,7 @@ HOW TO BUILD
 
 HOW TO USE
 --------------------
-for the time being until a launcher is completed all you must do is download the repo and go into out/build/win-amd64-relwithdebinfo and either put the assets folder with the dumped assets and default.xex in it or make a new folder somewhere and place the assets with the default.xex in there the only folder/files you should have are the kronosgame folder with its files and the default.xex
+for the time being until a launcher is completed all you must do is download the repo and go into out/build/win-amd64-relwithdebinfo and either put the assets folder with the dumped assets, redahm.toml, and the default.xex in it or make a new folder somewhere and place the assets with the default.xex in there the only folder/files you should have are the kronosgame folder with its files and the default.xex
 
 
 CURRENT ISSUES WITH THE GAME
@@ -27,3 +55,9 @@ AUDIO SOUNDS LIKE GARBAGE AT THIS TIME, IM HOPING A REXGLUE UPDATE FIXES THIS, O
 
 
 IF YOU FIND ANY CRASHES PLEASE MAKE AN ISSUE EXPLAINING WHERE IT WAS AND WHAT YOU WERE DOING (i.e. went to shen-long, game crashed during loading or used pk ability on vehicle causing the game to crash)(no these dont happen ~~anymore~~ they're just examples)
+
+CREDITS
+----------------------
+MaxDeadBear - for adding a handful of the CRT functions needed to make the game not crash while i was busy with another project
+Raoul - Making the logo
+DAHM team - for Re-Enlightened and knowing how to use UPK-Explorer
