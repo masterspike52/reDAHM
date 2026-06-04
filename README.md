@@ -1,5 +1,4 @@
-
-<img width="1500" height="550" alt="ReDAHM_Logo" src="https://github.com/user-attachments/assets/8bb23711-d45c-486e-8a2f-9c314daa903c" />
+<img width="1500" height="550" alt="redahm" src="https://github.com/user-attachments/assets/cb8075c5-e76e-4926-afcc-d1acabbf4b99" />
 
 
 
