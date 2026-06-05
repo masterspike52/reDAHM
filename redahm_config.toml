@@ -4,7 +4,8 @@
 
 includes = [
 "config/redahm_func.toml",
-"config/redahm_crt.toml"
+"config/redahm_crt.toml",
+"config/redahm_hook.toml"
 ]
 
 

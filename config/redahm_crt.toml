@@ -15,10 +15,10 @@ CreateDirectoryA = 0x82e65c58
 MoveFileA = 0x82e64a30
 SetFileAttributesA = 0x82e65630
 
-RtlAllocateHeap = 0x82BEFFF0
-RtlReAllocateHeap = 0x82BF1890
-RtlSizeHeap = 0x82bef170
-RtlFreeHeap = 0x82bf12d8
+ RtlAllocateHeap = 0x82BEFFF0
+ RtlReAllocateHeap = 0x82BF1890
+ RtlSizeHeap = 0x82bef170
+ RtlFreeHeap = 0x82bf12d8
 
 memcpy = 0x82cb1160
 memmove = 0x82cb1fe0

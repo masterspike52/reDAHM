@@ -4,13 +4,13 @@ longjmp_address = 0x82ff1e60
 
 
 [functions]
-0x824D56F0 = {}  # ctx.ctr.u32[0]
-0x82BA8A08 = {}  # ctx.ctr.u32[0]
-0x82C54538 = {}  # ctx.ctr.u32[0]
-0x82C1D408 = {}  # ctx.ctr.u32[0]
-0x82C1C800 = {}  # ctx.ctr.u32[0]
-0x82C1D2F0 = {}  # ctx.ctr.u32[0]
-0x82BB42A8 = {}  # ctx.ctr.u32[0]
+0x824D56F0 = {}  
+0x82BA8A08 = {}  
+0x82C54538 = {}  
+0x82C1D408 = {}  
+0x82C1C800 = {}  
+0x82C1D2F0 = {}  
+0x82BB42A8 = {}  
 0x82364A08 = {}
 0x82E4A884 = {}
 0x831BD838 = {}
@@ -57,3 +57,6 @@ longjmp_address = 0x82ff1e60
 0x83163470 = {}
 0x82a891a8 = {}
 0x82a306c8 = {}
+0x823a6330 = {}
+0x82fb6618 = {}
+0x82df2a58 = {}
