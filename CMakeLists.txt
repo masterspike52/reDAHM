@@ -15,6 +15,9 @@ include(generated/rexglue.cmake)
 # Sources
 set(REDAHM_SOURCES
     src/main.cpp
+    src/redahm_engine/hooks.cpp
+    src/redahm_engine/audio/xaudio2_audio_system.cpp
+    src/redahm_engine/audio/xaudio2_audio_driver.cpp
 )
 
 if(WIN32)
@@ -24,3 +27,6 @@ else()
 endif()
 
 rexglue_setup_target(redahm)
+
+target_link_libraries(redahm PRIVATE xaudio2.lib)
+
