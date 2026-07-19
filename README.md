@@ -12,7 +12,7 @@ this could be changed in the future by hand but would require more help).
 
 How to play it
 ----------------------------
-you can play the game by either downloading the release from releases or you can download the game through goopie (which is reccomended as to only need 1 program that takes care of all of it) 
+you can play the game by either downloading the release from releases and extracting the assets of your iso to a folder or you can download the game through goopie (which is reccomended as to only need 1 program that takes care of all of it) 
 the only thing you need to provide is the U.S. Version of Destroy all humans: Path of the furon for the xbox 360. you can download goopie from https://goopie.xyz/#/downloads then follow these instructions
 
 1. open goopie launcher
