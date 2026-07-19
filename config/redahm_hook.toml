@@ -1,5 +1,5 @@
-[midasm_hook]
-address = 0x822B8920
-name = "skip_loadingbik"
-after_instruction = false
-jump_address_on_true = 0x822B892C 
+[[midasm_hook]]
+address = 0x82e837d4
+name = "Hook_VdSwap_FrameTick"
+registers = []
+after_instruction = true

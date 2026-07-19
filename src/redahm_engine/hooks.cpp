@@ -1,47 +1,31 @@
-#include <rex/hook.h>
+#include "redahm_engine/overlays/fps_overlay.h"
+#include <rex/hook.h>  
+#include <cstdint>
+#include <cstring>
+#include "generated/redahm_init.h"
 #include "redahm_logging.h"
+#include <atomic>
+#include <bit>
+#include <functional>
+#include <thread>
 
-bool skip_loadingbik()
-{
-	return true;
-}
+// MidASM_HOOKS
 
+FpsOverlayDialog* g_fps_overlay = nullptr;
 
-REX_HOOK_RAW(sub_833B9708) {
-    uint32_t a1 = ctx.r3.u32;
-    uint32_t a2 = ctx.r4.u32;
+// Counts actual VdSwap presents (what the FPS overlay measures). Read/reset by
+// the UGameEngine::Tick diagnostic in framerate.cpp so present/s and tick/s can
+// be compared side by side.
+std::atomic<uint32_t> g_vdswap_presents{0};
 
-    bool is_open_handle = (a2 & 0x4000000) != 0;
+// Hash of the host thread that issues presents, so framerate.cpp can tell
+// whether rendering runs on the game-tick thread or a separate render thread.
+std::atomic<size_t> g_present_tid{0};
 
-    if (is_open_handle) {
-        RDAHM_INFO("loading <embedded bik> from offset 0x{:08X} ...", a1);
-    }
-    else {
-        const char* filename = a1
-            ? reinterpret_cast<const char*>(base + a1)
-            : "<null>";
-        RDAHM_INFO("loading {} from 0x{:08X} ...", filename, a1);
-    }
-
-    __imp__sub_833B9708(ctx, base);
-
-    RDAHM_INFO("done, returned 0x{:08X}", ctx.r3.u32);
-}
-
-REX_HOOK_RAW(sub_833BE510) {
-    uint32_t* a1 = reinterpret_cast<uint32_t*>(base + ctx.r3.u32);
-
-    RDAHM_INFO("sub_833BE510: running bink worker synchronously");
-
-    // Keep processing work items until shutdown signal or no more work
-    while (*a1 == 1) {
-        if (a1[6]) {
-            // call sub_833BE388 synchronously
-            __imp__sub_833BE388(ctx, base);
-        }
-        // briefly yield to avoid spinning
-        break;
-    }
-
-    ctx.r3.u32 = 0;
+void Hook_VdSwap_FrameTick() {
+    g_vdswap_presents.fetch_add(1, std::memory_order_relaxed);
+    g_present_tid.store(std::hash<std::thread::id>{}(std::this_thread::get_id()),
+                        std::memory_order_relaxed);
+    if (g_fps_overlay)
+        g_fps_overlay->RecordFrame();
 }

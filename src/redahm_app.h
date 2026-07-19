@@ -11,6 +11,7 @@
 #include <rex/runtime.h>
 #include "redahm_engine/overlays/redahm_logging_overlay.h"
 #include "redahm_engine/audio/xaudio2_audio_system.h"
+#include "redahm_engine/overlays/fps_overlay.h"
 
 class RedahmApp : public rex::ReXApp {
  public:
@@ -33,6 +34,9 @@ class RedahmApp : public rex::ReXApp {
       drawer->AddDialog(new REDAHMLogOverlayDialog(drawer));
       path_wizard_ = new PathSetupWizard(drawer);
       drawer->AddDialog(path_wizard_);
+      auto* fps = new FpsOverlayDialog(drawer);
+      drawer->AddDialog(fps);
+      g_fps_overlay = fps;
   }
   std::optional<rex::PathConfig> OnFinalizePaths(
       const rex::PathConfig& defaults,
