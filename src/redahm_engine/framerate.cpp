@@ -1,26 +1,3 @@
-// 60 FPS unlock for Destroy All Humans! Path of the Furon (Unreal Engine 3).
-//
-// The title runs a stock UE3 variable-delta loop: FEngineLoop measures the
-// frame's DeltaSeconds from the CPU timebase (appCycles, guest sub_82BEA278)
-// and passes it to UGameEngine::Tick(FLOAT DeltaSeconds) (guest sub_82743F40).
-// Gameplay/physics are therefore delta-timed, not fixed-stepped.
-//
-// The 30 FPS lock is the engine's frame-rate smoothing. Each iteration the
-// launch loop asks UGameEngine::GetMaxTickRate() for the target rate and
-// sleeps to hold it. That virtual is guest sub_82743E38: it smooths the
-// frametime, converts to FPS, clamps to the viewport min/max and quantizes
-// the result to the tiers 30 / 25 / 20 / 15 (top tier = 30.0f). It returns
-// the cap in f1; a return of 0.0 is UE3's convention for "no cap".
-//
-// Because the simulation consumes the real measured delta, lifting this cap
-// lets the loop run at 60 with correct motion speed. We defer to the original
-// (so its internal smoothing state stays consistent) and only raise a cap it
-// actually asked for -- never introducing one where the engine wanted none.
-//
-// Caveats still worth watching at runtime: any UE3 DeltaSeconds clamp in the
-// launch loop, gameplay/anim timers authored for 30 Hz, and whether the host
-// present path actually paces at 60 Hz. See the F1 FPS overlay to confirm.
-
 #include <rex/hook.h>
 
 #include <atomic>
@@ -59,7 +36,6 @@ REX_HOOK_RAW(sub_82E694E0) {
     auto* present_interval = reinterpret_cast<rex::be_u32*>(base + params + 0x34);
     if (*present_interval == 2u) {
       *present_interval = 1u;
-      RDAHM_INFO("[fps] present interval D3DPRESENT_INTERVAL_TWO -> ONE (60fps unlock)");
     }
   }
   __imp__sub_82E694E0(ctx, base);
@@ -88,35 +64,6 @@ REX_HOOK_RAW(sub_82743E38) {
 }
 
 // UGameEngine::Tick(FLOAT DeltaSeconds) -- exactly one call per rendered frame.
-// This is the authoritative frame counter, and ctx.f1 (DeltaSeconds) tells us
-// what frame time the simulation actually believes it is running at:
-//   ~0.0333 => sim thinks 30 fps,  ~0.0167 => sim thinks 60 fps.
 REX_HOOK_RAW(sub_82743F40) {
-  const double delta_seconds = ctx.f1.f64;
-
-  static std::atomic<uint32_t> frames{0};
-  static std::atomic<double> delta_sum{0.0};
-  const uint32_t n = frames.fetch_add(1) + 1;
-  delta_sum.store(delta_sum.load() + delta_seconds);
-
-  using clock = std::chrono::steady_clock;
-  static clock::time_point last = clock::now();
-  const auto now = clock::now();
-  if (now - last >= std::chrono::seconds(1)) {
-    last = now;
-    const double avg_delta = delta_sum.load() / (n ? n : 1);
-    const uint32_t presents = g_vdswap_presents.exchange(0, std::memory_order_relaxed);
-    const size_t tick_tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
-    const size_t present_tid = g_present_tid.load(std::memory_order_relaxed);
-    RDAHM_INFO(
-        "[fps] Tick frames/s={} present/s={} avg_delta={:.4f}s (sim~{:.1f}fps) same_thread={} "
-        "swap_caller_lr={:#010x}",
-        n, presents, avg_delta, avg_delta > 0.0 ? 1.0 / avg_delta : 0.0,
-        present_tid != 0 && present_tid == tick_tid,
-        g_last_swap_lr.load(std::memory_order_relaxed));
-    frames.store(0);
-    delta_sum.store(0.0);
-  }
-
   __imp__sub_82743F40(ctx, base);
 }

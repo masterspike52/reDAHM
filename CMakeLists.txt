@@ -16,6 +16,9 @@ include(generated/rexglue.cmake)
 set(REDAHM_SOURCES
     src/main.cpp
     src/redahm_engine/hooks.cpp
+    src/redahm_engine/dlc_unlock.cpp
+    src/redahm_engine/movie_sequence.cpp
+    src/redahm_engine/framerate.cpp
     src/redahm_engine/audio/xaudio2_audio_system.cpp
     src/redahm_engine/audio/xaudio2_audio_driver.cpp
 )

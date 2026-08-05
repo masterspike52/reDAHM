@@ -30,6 +30,7 @@ class RedahmApp : public rex::ReXApp {
           };
   }
 
+
   void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
       drawer->AddDialog(new REDAHMLogOverlayDialog(drawer));
       path_wizard_ = new PathSetupWizard(drawer);

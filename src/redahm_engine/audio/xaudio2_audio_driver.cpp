@@ -1,18 +1,11 @@
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-
 #include <algorithm>
-#include <cstring>
 
 #include "xaudio2_audio_driver.h"
 
 #include <rex/assert.h>
 #include <rex/audio/conversion.h>
-#include <rex/cvar.h>
 #include <rex/logging.h>
 
-REXCVAR_DEFINE_BOOL(audio_mute, false, "Audio", "Mute audio output");
 
 namespace xaudio2 {
 
@@ -90,23 +83,18 @@ namespace xaudio2 {
             }
         }
 
-        if (REXCVAR_GET(audio_mute)) {
-            std::memset(converted, 0, frame_samples_ * sizeof(float));
-        }
-        else {
-            switch (device_channels_) {
-            case 2:
-                rex::audio::conversion::sequential_6_BE_to_interleaved_2_LE(
-                    converted, input_frame, channel_samples_);
-                break;
-            case 6:
-                rex::audio::conversion::sequential_6_BE_to_interleaved_6_LE(
-                    converted, input_frame, channel_samples_);
-                break;
-            default:
-                assert_unhandled_case(device_channels_);
-                break;
-            }
+        switch (device_channels_) {
+        case 2:
+            rex::audio::conversion::sequential_6_BE_to_interleaved_2_LE(
+                converted, input_frame, channel_samples_);
+            break;
+        case 6:
+            rex::audio::conversion::sequential_6_BE_to_interleaved_6_LE(
+                converted, input_frame, channel_samples_);
+            break;
+        default:
+            assert_unhandled_case(device_channels_);
+            break;
         }
 
         {

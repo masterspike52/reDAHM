@@ -1,7 +1,3 @@
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-
 #include "xaudio2_audio_system.h"
 #include "xaudio2_audio_driver.h"
 
