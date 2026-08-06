@@ -17,6 +17,7 @@ set(REDAHM_SOURCES
     src/main.cpp
     src/redahm_engine/hooks.cpp
     src/redahm_engine/dlc_unlock.cpp
+    src/redahm_engine/console_exec.cpp
     src/redahm_engine/movie_sequence.cpp
     src/redahm_engine/framerate.cpp
     src/redahm_engine/audio/xaudio2_audio_system.cpp
@@ -29,7 +30,9 @@ else()
     add_executable(redahm ${REDAHM_SOURCES})
 endif()
 
-rexglue_setup_target(redahm)
+# SDK 0.9.0 moved Xenos GPU emulation out of the runtime into a plugin DLL that
+# is loaded at startup from the executable folder, so it has to be staged here.
+rexglue_setup_target(redahm GPU_PLUGINS xenos)
 
 target_link_libraries(redahm PRIVATE xaudio2.lib)
 
