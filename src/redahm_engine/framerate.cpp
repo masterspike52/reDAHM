@@ -5,6 +5,7 @@
 #include <functional>
 #include <thread>
 
+#include "console_exec.h"
 #include "redahm_logging.h"
 
 // Actual VdSwap present count, incremented in hooks.cpp's Hook_VdSwap_FrameTick.
@@ -64,6 +65,9 @@ REX_HOOK_RAW(sub_82743E38) {
 }
 
 // UGameEngine::Tick(FLOAT DeltaSeconds) -- exactly one call per rendered frame.
+// Also the drain point for host-issued console commands: it is the one place
+// that runs every frame on a guest thread with a live context.
 REX_HOOK_RAW(sub_82743F40) {
   __imp__sub_82743F40(ctx, base);
+  RedahmDrainConsoleQueue(ctx, base);
 }

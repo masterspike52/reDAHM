@@ -21,8 +21,7 @@ std::atomic<size_t> g_present_tid{0};
 void Hook_VdSwap_FrameTick() {
     static std::atomic<bool> cfg_logged{false};
     if (!cfg_logged.exchange(true)) {
-        RDAHM_INFO("[cfg] disable_motion_blur={} disable_draw_distance_cull={}",
-                   REXCVAR_GET(disable_motion_blur), REXCVAR_GET(disable_draw_distance_cull));
+        RDAHM_INFO("[cfg] disable_motion_blur={}", REXCVAR_GET(disable_motion_blur));
     }
     g_vdswap_presents.fetch_add(1, std::memory_order_relaxed);
     g_present_tid.store(std::hash<std::thread::id>{}(std::this_thread::get_id()),
