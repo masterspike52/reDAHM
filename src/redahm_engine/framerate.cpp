@@ -7,6 +7,8 @@
 
 #include "console_exec.h"
 #include "redahm_logging.h"
+#include "reflection.h"
+#include "splitscreen.h"
 
 // Actual VdSwap present count, incremented in hooks.cpp's Hook_VdSwap_FrameTick.
 extern std::atomic<uint32_t> g_vdswap_presents;
@@ -69,5 +71,21 @@ REX_HOOK_RAW(sub_82743E38) {
 // that runs every frame on a guest thread with a live context.
 REX_HOOK_RAW(sub_82743F40) {
   __imp__sub_82743F40(ctx, base);
+  // Before the drain: it latches the membase, and the console's exec-component
+  // fan-out reads guest memory through the reflection module.
+  //
+  // Walks GObjObjects only when the object browser has asked for it. Done here
+  // rather than from the UI thread so the walk cannot observe the array
+  // mid-reallocation during a GC.
+  RedahmRefreshObjectSnapshot(base);
   RedahmDrainConsoleQueue(ctx, base);
+  // Property writes go through the engine's own ImportText plus the edit
+  // notifications, so they are guest calls and belong on a guest thread.
+  RedahmDrainPropertyEdits(ctx, base);
+  // Split-screen: re-asserts each local player's viewport rect, and runs any
+  // queued player create/remove. Both construct objects and call into the
+  // guest, so they need the same guest thread the drains above do. Last,
+  // because a player created here should be laid out before it is first drawn
+  // and UGameEngine::Tick has already returned by this point.
+  RedahmDrainSplitscreen(ctx, base);
 }

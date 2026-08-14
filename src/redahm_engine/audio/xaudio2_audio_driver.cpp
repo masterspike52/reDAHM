@@ -83,14 +83,18 @@ namespace xaudio2 {
             }
         }
 
+        // Read per frame rather than cached: SetStereoFold/SetOutputGain are
+        // documented to take effect on the output stage's next device callback.
+        const float gain = rex::audio::GetOutputGain();
+
         switch (device_channels_) {
         case 2:
             rex::audio::conversion::sequential_6_BE_to_interleaved_2_LE(
-                converted, input_frame, channel_samples_);
+                converted, input_frame, channel_samples_, rex::audio::GetStereoFold(), gain);
             break;
         case 6:
             rex::audio::conversion::sequential_6_BE_to_interleaved_6_LE(
-                converted, input_frame, channel_samples_);
+                converted, input_frame, channel_samples_, gain);
             break;
         default:
             assert_unhandled_case(device_channels_);

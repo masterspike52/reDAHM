@@ -13,6 +13,7 @@
 #include "redahm_engine/audio/xaudio2_audio_system.h"
 #include "redahm_engine/overlays/fps_overlay.h"
 #include "redahm_engine/overlays/debug_command_overlay.h"
+#include "redahm_engine/overlays/object_browser_overlay.h"
 
 class RedahmApp : public rex::ReXApp {
  public:
@@ -26,14 +27,6 @@ class RedahmApp : public rex::ReXApp {
 
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
-      // SDK 0.9.0 moved Xenos emulation into a runtime-loaded plugin and
-      // defaults the selection to none. No plugin means no presenter, which
-      // means no ImGui overlays, which means no path wizard. Default to xenos
-      // so the game data root selector runs; the gpu_plugin cvar still wins.
-      if (config.gpu_plugin.empty()) {
-          config.gpu_plugin = "xenos";
-      }
-
       config.audio_factory = [](rex::runtime::FunctionDispatcher* fd) {
           return xaudio2::XAudio2AudioSystem::Create(fd);
           };
@@ -43,6 +36,7 @@ class RedahmApp : public rex::ReXApp {
   void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
       drawer->AddDialog(new REDAHMLogOverlayDialog(drawer));
       drawer->AddDialog(new DebugCommandOverlayDialog(drawer));
+      drawer->AddDialog(new ObjectBrowserDialog(drawer));
       path_wizard_ = new PathSetupWizard(drawer);
       drawer->AddDialog(path_wizard_);
       auto* fps = new FpsOverlayDialog(drawer);
