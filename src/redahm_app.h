@@ -10,7 +10,6 @@
 #include "redahm_engine/path_setup_wizard.h"
 #include <rex/runtime.h>
 #include "redahm_engine/overlays/redahm_logging_overlay.h"
-#include "redahm_engine/audio/xaudio2_audio_system.h"
 #include "redahm_engine/overlays/fps_overlay.h"
 #include "redahm_engine/overlays/debug_command_overlay.h"
 
@@ -33,10 +32,6 @@ class RedahmApp : public rex::ReXApp {
       if (config.gpu_plugin.empty()) {
           config.gpu_plugin = "xenos";
       }
-
-      config.audio_factory = [](rex::runtime::FunctionDispatcher* fd) {
-          return xaudio2::XAudio2AudioSystem::Create(fd);
-          };
   }
 
 

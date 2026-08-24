@@ -20,8 +20,6 @@ set(REDAHM_SOURCES
     src/redahm_engine/console_exec.cpp
     src/redahm_engine/movie_sequence.cpp
     src/redahm_engine/framerate.cpp
-    src/redahm_engine/audio/xaudio2_audio_system.cpp
-    src/redahm_engine/audio/xaudio2_audio_driver.cpp
 )
 
 if(WIN32)
@@ -34,5 +32,5 @@ endif()
 # is loaded at startup from the executable folder, so it has to be staged here.
 rexglue_setup_target(redahm GPU_PLUGINS xenos)
 
-target_link_libraries(redahm PRIVATE xaudio2.lib)
+target_link_libraries(redahm)
 
