@@ -1,0 +1,386 @@
+// ps_a2864b59ae059780.bin
+// Xenos pixel shader decompiled to HLSL (D3D9 / SM3).
+// Container flags 0x102A1100, 516 ucode dwords, 12 literal constant(s).
+// Constant table creator: 2.0.6995.0 (ps_3_0)
+// Shader header: 000000C0 00000810 10041A00 0000080A 00000000 00007108 003F00FF 00000001 00003050 00003151 0000F254 0000F356 0000F457 0000F558 0000F6A0 0000F7A1
+//   interpolator: r0 <-> TEXCOORD0 (flags 0x3)
+//   interpolator: r1 <-> TEXCOORD1 (flags 0x3)
+//   interpolator: r2 <-> TEXCOORD4 (flags 0xF)
+//   interpolator: r3 <-> TEXCOORD6 (flags 0xF)
+//   interpolator: r4 <-> TEXCOORD7 (flags 0xF)
+//   interpolator: r5 <-> TEXCOORD8 (flags 0xF)
+//   interpolator: r6 <-> COLOR0 (flags 0xF)
+//   interpolator: r7 <-> COLOR1 (flags 0xF)
+// Definition header: 00000000 00000007 00000000 00000000
+// Non-float definitions (raw): 00000000 00000000
+
+#include "xenos_common.hlsli"
+
+float4 AmbientColorAndSkyFactor : register(c21); // float4
+float4 ConstantLighting : register(c22); // float3
+float4 LocalToWorldMatrix[3] : register(c3); // float3x3 (matrix_columns)
+float4 LowerSkyColor : register(c20); // float3
+float4 ModShadowAccumResolution : register(c25); // float2
+float4 ModShadowColor : register(c23); // float3
+float4 ModShadowGroupColor : register(c24); // float3
+float4 OpacityOverride : register(c18); // float
+float4 SCENE_COLOR_BIAS_FACTOR : register(c0); // float4
+float4 UniformScalar_0 : register(c13); // float
+float4 UniformScalar_1 : register(c14); // float
+float4 UniformScalar_5 : register(c15); // float
+float4 UniformScalar_6 : register(c16); // float
+float4 UniformScalar_7 : register(c17); // float
+float4 UniformVector_0 : register(c6); // float4
+float4 UniformVector_1 : register(c7); // float4
+float4 UniformVector_2 : register(c8); // float4
+float4 UniformVector_4 : register(c9); // float4
+float4 UniformVector_5 : register(c10); // float4
+float4 UniformVector_6 : register(c11); // float4
+float4 UniformVector_7 : register(c12); // float4
+float4 UpperSkyColor : register(c19); // float3
+sampler2D Texture2D_0 : register(s0);
+sampler2D Texture2D_1 : register(s1);
+sampler2D Texture2D_2 : register(s2);
+sampler2D Texture2D_3 : register(s3);
+sampler2D Texture2D_4 : register(s4);
+sampler2D Texture2D_5 : register(s5);
+sampler2D Texture2D_6 : register(s6);
+sampler2D Texture2D_7 : register(s7);
+sampler2D Texture2D_8 : register(s8);
+sampler2D Texture2D_9 : register(s9);
+samplerCUBE TextureCube_0 : register(s10);
+sampler2D ModShadowAccumTexture : register(s11);
+
+struct PS_INPUT
+{
+    float4 texcoord0 : TEXCOORD0; // r0
+    float4 texcoord1 : TEXCOORD1; // r1
+    float4 texcoord4 : TEXCOORD4; // r2
+    float4 texcoord6 : TEXCOORD6; // r3
+    float4 texcoord7 : TEXCOORD7; // r4
+    float4 texcoord8 : TEXCOORD8; // r5
+    float4 color0 : COLOR0; // r6
+    float4 color1 : COLOR1; // r7
+};
+
+struct PS_OUTPUT
+{
+    float4 color0 : COLOR0;
+};
+
+PS_OUTPUT main(PS_INPUT In)
+{
+    float4 r0 = In.texcoord0;
+    float4 r1 = In.texcoord1;
+    float4 r2 = In.texcoord4;
+    float4 r3 = In.texcoord6;
+    float4 r4 = In.texcoord7;
+    float4 r5 = In.texcoord8;
+    float4 r6 = In.color0;
+    float4 r7 = In.color1;
+    float4 r8 = 0.0;
+    float4 r9 = 0.0;
+    float4 r10 = 0.0;
+    float4 r11 = 0.0;
+    float4 r12 = 0.0;
+    float4 r13 = 0.0;
+    float4 r14 = 0.0;
+    float4 r15 = 0.0;
+    float4 r16 = 0.0;
+    float4 r17 = 0.0;
+    float4 r18 = 0.0;
+    float4 r19 = 0.0;
+    float4 r20 = 0.0;
+    float4 r21 = 0.0;
+    float4 r22 = 0.0;
+    float4 r23 = 0.0;
+    float4 r24 = 0.0;
+    float4 r25 = 0.0;
+    float4 r26 = 0.0;
+    float4 oC0 = 0.0;
+    float ps = 0.0;
+
+    ps = 1.0 / ModShadowAccumResolution.x;
+    r14.xyz = UniformVector_6.xyz * UniformVector_6.www;
+    r0.z = ps;
+    ps = 1.0 / ModShadowAccumResolution.y;
+    r7.w = dot(r4.zxy, r4.zxy);
+    r0.w = ps;
+    r0.zw = r0.zw * abs(r8.xy);
+    r8.xy = tex2D(ModShadowAccumTexture, r0.zw).xy;
+    ps = rsqrt(abs(r7.w));
+    r0.zw = r0.xy * UniformScalar_0.xx;
+    r8.z = ps;
+    r23 = r8.zxyz * float4(-0.075, 0.875, 0.875, 1.0);
+    r10 = r23.xwww * r4.xzxy;
+    ps = r1.x;
+    r1.z = r10.x + r1.x;
+    r1.w = ps;
+    ps = r1.y;
+    r1.x = ps;
+    r9.yzw = tex2D(Texture2D_7, r1.zx).xyz;
+    r11.xyz = tex2D(Texture2D_5, r0.xy).xyz;
+    r22.xyz = tex2D(Texture2D_4, r0.zw).xyw;
+    ps = UniformVector_2.x * r1.w;
+    r4.x = ps;
+    ps = -r1.x;
+    r20 = r1.wxwx * float4(0.5, 0.5, 6.0, 6.0);
+    ps = 1.0 + ps;
+    r0.zw = r1.wx * UniformVector_1.xy;
+    r7.w = ps;
+    r8 = r6.yxzw * 2.0 - 1.0;
+    r7.xyz = r7.xyz * 2.0 - 1.0;
+    ps = OpacityOverride.x;
+    r6.y = r3.w - 4e+02;
+    r6.x = saturate(ps);
+    ps = 1.0 - r6.x;
+    r6.z = dot(r2.zxy, r2.zxy);
+    r12.y = ps;
+    ps = 0.00022222222 * r6.y;
+    r1.y = dot(r7.zxy, r7.zxy);
+    r9.x = saturate(ps);
+    ps = rsqrt(abs(r6.z));
+    r6.y = dot(r8.zyx, r8.zyx);
+    r4.y = ps;
+    r6.xzw = r11.zxy * 2.0 - 1.0;
+    ps = rsqrt(abs(r6.y));
+    r11.xyz = r4.yyy * r2.xyz;
+    r6.y = ps;
+    ps = rsqrt(abs(r1.y));
+    r19.xyz = r8.xzy * r6.yyy;
+    r6.y = ps;
+    ps = r22.x + r22.x;
+    r15.xyz = r7.xzy * r6.yyy;
+    r12.z = ps;
+    ps = UniformVector_4.z * r6.x;
+    r17 = r9 * float4(-0.025, 6.0, 6.0, 6.0);
+    r11.w = ps;
+    ps = 1.0 / UniformVector_1.y;
+    r6.xy = r11.zw + float2(0.1, -1.0);
+    r7.x = ps;
+    ps = 5.0 * r6.x;
+    r2.xyz = r19.yzx * r15.zyx;
+    r7.y = saturate(ps);
+    r2.xyz = r19.xyz * r15.yxz - r2.xyz;
+    r9.xy = r10.zw * r17.xx + r0.zw;
+    ps = r9.y;
+    r13.xyz = r2.xyz * r8.www;
+    ps = r7.x * ps;
+    r0.z = dot(r13.zxy, r13.zxy);
+    r7.x = ps;
+    ps = 1.0 / UniformVector_1.x;
+    r7.xz = -r7.xy + 1.0;
+    r7.y = ps;
+    ps = r22.y + r22.y;
+    r4.yzw = r7.wxy * UniformVector_2.yyx;
+    r12.w = ps;
+    ps = r4.w;
+    r2.xyz = r4.zxy - 0.5;
+    ps = r9.x * ps;
+    r8.xyz = float3((r4.xzy >= 0.5));
+    r12.x = ps;
+    r18.xyz = r12.zwx + float3(-1.0, -1.0, -0.5);
+    r16.xyz = r2.yzx - r4.xyz;
+    r2.yz = float2((r12.xy >= float2(0.5, 0.004)));
+    r4.yzw = r16.zxy * r8.yxz + r4.zxy;
+    ps = rsqrt(abs(r0.z));
+    r13.w = r18.z - r12.x;
+    r2.x = ps;
+    r16 = r13.xzyw * r2.xxxy;
+    r4.x = r12.x + r16.w;
+    r4 = r4.zwxy + r4.zwxy;
+    r0.zw = tex2D(Texture2D_3, r20.xy).xy;
+    r12 = tex2D(Texture2D_1, r4.zw);
+    r26 = tex2D(Texture2D_1, r4.xy);
+    r4.xyz = tex2D(Texture2D_0, r9.xy).xyz;
+    r13 = tex2D(Texture2D_6, r0.xy);
+    r21.xzw = tex2D(Texture2D_2, r20.zw).wxy;
+    r20.xyw = tex2D(Texture2D_2, r1.wx).xyw;
+    r24.xy = r20.xy * 2.0 - 1.0;
+    r21.zw = r21.zw * 2.0 - 1.0;
+    ps = r3.w;
+    r18.z = float((r13.w >= 0.5));
+    r20.xyz = r4.xyz * 2.0 - 1.0;
+    ps = 0.0001 * ps;
+    r7.x = r21.x * r20.w;
+    r9.z = saturate(ps);
+    r23.x = r6.y * r18.z - r20.z;
+    ps = ModShadowGroupColor.x * r7.z;
+    r0.x = dot(r8.xzz, float3(1.0, 1.0, 1.0));
+    r8.x = ps;
+    r6.y = (r0.x == 0.0) ? r26.x : r26.y;
+    r0.y = r8.y * 2.0 + r2.y;
+    r6.x = (r0.y == 0.0) ? r12.x : r12.y;
+    ps = ModShadowGroupColor.y * r7.z;
+    r25 = r0.xxyy + float4(-3.0, -2.0, -2.0, -3.0);
+    r8.y = ps;
+    r6.x = (r25.z == 0.0) ? r12.z : r6.x;
+    r6.y = (r25.y == 0.0) ? r26.z : r6.y;
+    r8.z = (r25.x == 0.0) ? r26.w : r6.y;
+    r0.y = (r25.w == 0.0) ? r12.w : r6.x;
+    ps = 0.25 + r0.y;
+    r6.x = max(r8.z, 0.0);
+    r0.x = ps;
+    ps = r6.x;
+    r8.w = max(r10.y, 0.0);
+    r6.x = ps;
+    ps = 0.3;
+    r12 = -r8.zxyw + 1.0;
+    r6.y = ps;
+    ps = min(r6.x, r6.y);
+    r8.xyw = r0.zwx + r0.zwy;
+    r6.x = ps;
+    ps = log2(abs(r12.w));
+    r21.xy = r8.xy - 1.0;
+    r6.y = ps;
+    ps = 3.3333333 * r6.x;
+    r23.yz = r23.yz * r12.yz;
+    r7.w = ps;
+    ps = 0.0125 * r6.y;
+    r21 = r21 * float4(0.012, 0.012, 0.5, 0.5);
+    r6.y = ps;
+    ps = pow(2.0, r6.y);
+    r0.yz = r24.xy + r21.zw;
+    r9.w = ps;
+    ps = (-1.0) - -r7.x;
+    r7.yz = -r9.zw + 1.0;
+    r0.x = ps;
+    ps = UniformScalar_1.x * r7.y;
+    r0.xzw = r7.www * r0.xyz;
+    r1.y = ps;
+    ps = 1.0 + r0.x;
+    r23.yzw = r23.xyz + float3(1.0, 0.125, 0.125);
+    r12.w = ps;
+    r6.xy = r1.yy * r18.xy + r6.zw;
+    r18.xy = r6.xy * UniformVector_4.xy - r21.xy;
+    ps = r12.x;
+    r23.x = abs(r12.w) * abs(r12.w);
+    r6.x = ps;
+    ps = 2.5 * r6.x;
+    r12.xy = r23.xz * r23.xw;
+    r12.z = ps;
+    r0.xy = r12.xz * r12.xw;
+    ps = (-0.5) + r0.y;
+    r7.w = saturate(ps);
+    r22.w = r23.y * r7.w;
+    r6.xz = r22.zw + float2(-1.0, -2.0);
+    r6.y = r4.z * 2.0 + r6.z;
+    r6.yw = r6.yx * r7.yy + 1.0;
+    r6.x = (r1.y > 0.0) ? r6.w : 1.0;
+    r18.w = (r1.y >= 0.0) ? r6.x : 1.0;
+    r4.xyw = r18.xyz * r18.zzw;
+    r6.xz = r21.xy + r4.xy;
+    r6.xz = r6.xz + r0.zw;
+    r6.xz = -r20.xy + r6.xz;
+    r6.xz = r6.xz * r7.ww + r20.xy;
+    r6.xz = r6.xz * r7.yy;
+    r6.xyz = (r7.yyy > 0.0) ? r6.xyz : float3(0.0, 1.0, 0.0);
+    r6.yzw = (r7.yyy >= 0.0) ? r6.xyz : float3(0.0, 1.0, 0.0);
+    r6.x = dot(r6.zyw, r6.zyw);
+    ps = rsqrt(abs(r6.x));
+    r0.zw = r1.wx * UniformVector_7.xy;
+    r6.x = ps;
+    r1.xyz = r6.yzw * r6.xxx;
+    r6.x = dot(r1.yxz, r10.yzw);
+    r6.xyz = r1.xzy * r6.xxx;
+    r10.xyz = r6.xyz * 2.0 - r10.zwy;
+    r6.xyz = r19.zxy * r10.zzz;
+    r6.xyz = r16.xzy * r10.yyy + r6.xyz;
+    r6.xyw = r15.yzx * r10.xxx + r6.zyx;
+    r15.xyz = r6.xxx * LocalToWorldMatrix[2].xzy;
+    r6.xyz = r6.yyy * LocalToWorldMatrix[1].xzy + r15.xyz;
+    r6.xyz = r6.www * LocalToWorldMatrix[0].xyz + r6.xzy;
+    r6 = xe_cube(r6.xyz);
+    ps = 1.0 / abs(r6.z);
+    r15.z = r6.w;
+    r1.w = ps;
+    r15.xy = r6.yx * r1.ww + 1.5;
+    r16.xyz = texCUBE(TextureCube_0, xe_cube_dir(r15.xyz)).xyz;
+    r8.xyz = tex2D(Texture2D_8, r9.xy).xyz;
+    r9.xyz = tex2D(Texture2D_9, r0.zw).xyz;
+    ps = -ModShadowColor.x;
+    r0.z = float((UniformScalar_5.x >= 1.0));
+    ps = 1.0 + ps;
+    r6.w = dot(r5.zxy, r5.zxy);
+    r15.x = ps;
+    ps = -ModShadowColor.y;
+    r6.xyz = -UniformVector_0.zxy + 1.0;
+    ps = 1.0 + ps;
+    r0.w = float((UniformScalar_5.x > 1.0));
+    r15.y = ps;
+    r9.xyz = (-abs(r0.www) >= 0.0) ? r9.xyz : 1.0;
+    ps = rsqrt(abs(r6.w));
+    r14.xyz = r14.xyz * r13.xyz;
+    r6.w = ps;
+    r13.xyz = (-abs(r0.zzz) >= 0.0) ? 1.0 : r9.xyz;
+    ps = -ModShadowColor.z;
+    r0.z = -r18.z + 1.0;
+    ps = 1.0 + ps;
+    r9.xyz = r0.zzz * UniformVector_5.xyz;
+    r15.z = ps;
+    ps = AmbientColorAndSkyFactor.x * r6.y;
+    r14.xyz = r14.xyz * r13.xyz;
+    r13.x = ps;
+    r4.xyz = r18.zzz * UniformScalar_6.xxx + r9.xzy;
+    ps = AmbientColorAndSkyFactor.y * r6.z;
+    r7.x = saturate(r8.w - r7.x);
+    r13.y = ps;
+    ps = AmbientColorAndSkyFactor.z * r6.x;
+    r8.yzw = r7.xxx * r8.xyz;
+    r13.z = ps;
+    r7.xyz = r17.ywz * r7.zzz + r16.xzy;
+    ps = r6.w;
+    r9.xyz = r9.xzy * r7.xyz;
+    r7.xyz = r12.yyy * r15.xyz + ModShadowColor.xyz;
+    r9.xyz = r9.xyz * r7.www + UniformVector_0.xzy;
+    ps = r5.x * ps;
+    r14.xyz = r14.xyz * r4.www;
+    r8.x = ps;
+    r4.xyz = r14.xyz * UniformScalar_7.xxx + r4.xzy;
+    r12.xyz = r14.xyz * r12.www - r8.yzw;
+    r12.xyz = r12.xyz * r7.www + r8.yzw;
+    ps = r6.w;
+    r0.xyz = r0.xxx * r4.xyz;
+    ps = r5.y * ps;
+    r4.xyz = r0.xzy * r4.xzy;
+    r8.y = ps;
+    r9.xyz = r13.xyz * r12.xyz + r9.xzy;
+    ps = r6.w;
+    r0.xyz = r12.xyz * r6.yzx;
+    ps = r5.z * ps;
+    r6.y = saturate(dot(r11.zxy, r10.zxy));
+    r8.z = ps;
+    ps = log2(r6.y);
+    r6.x = dot(r8.zxy, r1.yxz);
+    r6.y = ps;
+    r6.xyz = r6.xxy * float3(-0.5, 0.5, 15.0);
+    r5.xy = r6.xy + 0.5;
+    ps = pow(2.0, r6.z);
+    r6.xy = abs(r5.xy) * abs(r5.xy);
+    r6.w = ps;
+    ps = ConstantLighting.x * r6.w;
+    r1.xyz = r1.yyy * ConstantLighting.xyz;
+    r5.x = ps;
+    ps = ConstantLighting.z * r6.w;
+    r8.xyz = r0.xzy * r6.xxx;
+    r5.y = ps;
+    ps = ConstantLighting.y * r6.w;
+    r6.xyz = r0.xzy * r6.yyy;
+    r5.z = ps;
+    r6.xyz = r6.xyz * UpperSkyColor.xzy + r9.xzy;
+    r6.xyz = r8.xzy * LowerSkyColor.xyz + r6.xzy;
+    r6.xyz = r5.xyz * r4.xyz + r6.xzy;
+    r6.xyz = r1.xyz * r0.xyz + r6.xzy;
+    ps = -r3.w;
+    r6.xyz = r6.xzy * r7.xzy;
+    ps = OpacityOverride.x + ps;
+    r7.xyz = r6.xzy - r6.xzy;
+    r7.w = ps;
+    oC0.w = r7.w * r2.z + r3.w;
+    r6.xyz = r7.xyz * r2.zzz + r6.xzy;
+    oC0.xyz = r6.xyz * SCENE_COLOR_BIAS_FACTOR.xxx;
+
+    PS_OUTPUT Out;
+    Out.color0 = oC0;
+    return Out;
+}

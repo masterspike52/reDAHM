@@ -1,0 +1,127 @@
+# Xbox 360 D3D entry points the plume renderer (src/redahm_engine/gpu) takes
+# over or calls into. Addresses and prototypes verified against the Path of the
+# Furon database; the device layout they imply lives in gpu/d3d/d3d_device.h.
+
+[functions]
+# Device lifetime and frame
+0x82E694E0 = { name = "Direct3D_CreateDevice" }
+0x82E68DC0 = { name = "D3DDevice_Reset" }
+0x82E68D68 = { name = "D3DDevice_Release" }
+0x82E82C88 = { name = "D3DDevice_Clear" }
+0x82E83588 = { name = "D3DDevice_Swap" }
+0x82E83580 = { name = "D3DDevice_WaitForVBlank" }
+0x82E830A0 = { name = "D3D_QueueVBlankWait" }
+0x82E68EA8 = { name = "D3DDevice_ReleaseThreadOwnership" }
+0x82E68F40 = { name = "D3DDevice_AcquireThreadOwnership" }
+0x82E8FB60 = { name = "D3D_PersistDisplaySurface" }
+0x82E91CA8 = { name = "D3D__ResetAllState" }
+
+# Command buffer recording (D3DDEVTYPE_COMMAND_BUFFER devices, UE3 loading
+# screens). Names follow their use in sub_82391958 / sub_82391AD8 / sub_82391B90.
+0x82E7E828 = { name = "D3DCommandBuffer_BeginRecording" }
+0x82E7F088 = { name = "D3DCommandBuffer_Marker" }
+0x82E80C00 = { name = "D3DCommandBuffer_EndRecording" }
+0x82E80FD8 = { name = "D3DCommandBuffer_Playback" }
+
+# Queries
+0x82E8C468 = { name = "D3DDevice_CreateQuery" }
+0x82E8B388 = { name = "D3DQuery_AddRef" }
+0x82E8B3A0 = { name = "D3DQuery_Release" }
+0x82E8B590 = { name = "D3DQuery_Issue" }
+0x82E8B810 = { name = "D3DQuery_GetData" }
+
+# Ring buffer and GPU scheduling (no hardware ring behind the renderer)
+0x82E89E38 = { name = "D3DDevice_SetRingBufferParameters" }
+0x82E898A8 = { name = "D3DDevice_RingBufferFlush" }
+0x82E88FF0 = { name = "D3DDevice_RingBufferSubmitBatch" }
+0x82E88F10 = { name = "D3DDevice_RingBufferWaitForSpace" }
+0x82E89A48 = { name = "D3DDevice_RingBufferPollReady" }
+0x82E89C60 = { name = "D3DDevice_BlockUntilIdle" }
+0x82E89A10 = { name = "D3DDevice_InsertFence" }
+0x82E68FC8 = { name = "D3D_EmitStateRestorePacket" }
+0x82E8BBB0 = { name = "D3D_SetHiZControl" }
+0x82E6D430 = { name = "D3DDevice_SetShaderGPRAllocation" }
+0x82E7AF10 = { name = "D3DDevice_SetGammaRamp" }
+0x82E7AFF0 = { name = "D3DDevice_SetPWLGammaRamp" }
+0x82E8FE98 = { name = "D3DDevice_SetPredication" }
+0x82E90958 = { name = "D3DDevice_BeginZPass" }
+0x82E90CA0 = { name = "D3DDevice_EndZPass" }
+
+# Draws, resolves and tiling
+0x82E8E808 = { name = "D3DDevice_DrawVertices" }
+0x82E8E1F0 = { name = "D3DDevice_DrawVerticesUP" }
+0x82E8EBF8 = { name = "D3DDevice_DrawIndexedVertices" }
+0x82E8E768 = { name = "D3DDevice_DrawIndexedVerticesUP" }
+0x82E8DD48 = { name = "D3DDevice_BeginVertices" }
+0x82E8E1E0 = { name = "D3DDevice_EndVertices" }
+0x82E8E238 = { name = "D3DDevice_BeginIndexedVertices" }
+0x82E8E758 = { name = "D3DDevice_EndIndexedVertices" }
+0x82E87110 = { name = "D3DDevice_Resolve" }
+0x82E90010 = { name = "D3DDevice_BeginTiling" }
+0x82E904A0 = { name = "D3DDevice_EndTiling" }
+
+# Resources
+0x82E86370 = { name = "D3DDevice_CreateSurface" }
+0x82E86250 = { name = "D3DDevice_CreateTexture" }
+0x82E76E48 = { name = "D3DDevice_CreateVertexBuffer" }
+0x82E77078 = { name = "D3DDevice_CreateIndexBuffer" }
+0x82E6D030 = { name = "D3DDevice_CreateVertexDeclaration" }
+0x82E6FA90 = { name = "D3DDevice_CreateVertexShader" }
+0x82E6F8F8 = { name = "D3DDevice_CreatePixelShader" }
+0x82E6CBD0 = { name = "XGRegisterVertexShader" }
+0x82E6C990 = { name = "XGRegisterPixelShader" }
+0x82E76F10 = { name = "D3DVertexBuffer_Lock" }
+0x82E77010 = { name = "D3DVertexBuffer_Unlock" }
+0x82E77128 = { name = "D3DIndexBuffer_Lock" }
+0x82E77170 = { name = "D3DIndexBuffer_Unlock" }
+0x82E85E90 = { name = "D3DTexture_LockRect" }
+0x82E83E68 = { name = "D3DTexture_UnlockRect" }
+0x82E85F88 = { name = "D3DCubeTexture_LockRect" }
+0x82E86070 = { name = "D3DArrayTexture_LockRect" }
+0x82E86218 = { name = "D3DLineTexture_LockRect" }
+0x82E865D0 = { name = "D3DVolume_LockBox" }
+0x82E86540 = { name = "D3DSurface_LockRect" }
+0x82E83F38 = { name = "D3DSurface_UnlockRect" }
+0x82E83E80 = { name = "D3DBaseTexture_UnlockRect" }
+0x82E83EB0 = { name = "D3DCubeTexture_UnlockRect" }
+0x82E83ED8 = { name = "D3DArrayTexture_UnlockRect" }
+0x82E83EF0 = { name = "D3DVolumeTexture_UnlockBox" }
+0x82E83F08 = { name = "D3DLineTexture_UnlockRect" }
+0x82E83F90 = { name = "D3DVolume_UnlockBox" }
+# Every Lock goes through this: lock range, lock count, the ring packet.
+0x82E76840 = { name = "D3D_EmitResourceMemoryPacket" }
+# UE3 builds its vertex/index buffers and most textures with the XG header
+# functions over its own memory and then offsets them into place.
+0x82E607C0 = { name = "XGSetVertexBufferHeader" }
+0x82E60858 = { name = "XGSetIndexBufferHeader" }
+0x82E61580 = { name = "XGSetTextureHeaderEx" }
+0x82E61800 = { name = "XGSetCubeTextureHeaderEx" }
+0x82E61C50 = { name = "XGOffsetResourceAddress" }
+0x82E864A8 = { name = "D3DSurface_GetDesc" }
+0x82E84B90 = { name = "D3DTexture_GetLevelDesc" }
+0x82E76D78 = { name = "D3DResource_Release" }
+0x82E76D00 = { name = "D3DResource_AddRef" }
+0x82E76648 = { name = "D3DResource_Destroy" }
+0x82E762E8 = { name = "D3DResource_GetType" }
+0x82E85DD8 = { name = "D3DTexture_GetSurfaceLevel" }
+
+# State
+0x82E7B6B8 = { name = "D3DDevice_SetViewport" }
+0x82E7AB28 = { name = "D3DDevice_GetViewport" }
+0x82E7B7E8 = { name = "D3DDevice_SetRenderTarget" }
+0x82E7BB48 = { name = "D3DDevice_SetDepthStencilSurface" }
+0x82E7AE08 = { name = "D3DDevice_GetRenderTarget" }
+0x82E7AE50 = { name = "D3DDevice_GetDepthStencilSurface" }
+0x82E7AA08 = { name = "D3DDevice_SetScissorRect" }
+0x82E6CCC8 = { name = "D3DDevice_SetVertexShader" }
+0x82E6C9C8 = { name = "D3DDevice_SetPixelShader" }
+0x82E6CEE8 = { name = "D3DDevice_SetVertexDeclaration" }
+0x82E865F0 = { name = "D3DDevice_SetTexture" }
+0x82E7AB90 = { name = "D3DDevice_SetStreamSource" }
+0x82E7AD38 = { name = "D3DDevice_SetIndices" }
+0x82E6C460 = { name = "D3DDevice_SetVertexShaderConstantFN" }
+0x82E6C7B0 = { name = "D3DDevice_SetVertexShaderConstantI" }
+0x82E6C660 = { name = "D3DDevice_SetVertexShaderConstantB" }
+0x82E6C540 = { name = "D3DDevice_SetPixelShaderConstantFN" }
+0x82E6C808 = { name = "D3DDevice_SetPixelShaderConstantI" }
+0x82E6C6C0 = { name = "D3DDevice_SetPixelShaderConstantB" }

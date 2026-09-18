@@ -1,0 +1,705 @@
+// ps_e62ed1be8daccc12.bin
+// Xenos pixel shader decompiled to HLSL (D3D9 / SM3).
+// Container flags 0x102A1100, 1158 ucode dwords, 12 literal constant(s).
+// Constant table creator: 2.0.6995.0 (ps_3_0)
+// Shader header: 000000C0 00001218 10000600 00000004 00000000 00002C63 00070007 00000001 0000F050 0000F151 00007252
+//   interpolator: r0 <-> TEXCOORD0 (flags 0xF)
+//   interpolator: r1 <-> TEXCOORD1 (flags 0xF)
+//   interpolator: r2 <-> TEXCOORD2 (flags 0x7)
+// Definition header: 00000000 00000007 00000000 00000000
+// Non-float definitions (raw): 00000000 00000000
+// NOTE: unhandled control flow cjmp at cf 4
+// NOTE: unhandled control flow cjmp at cf 9
+// NOTE: unhandled control flow cjmp at cf 14
+// NOTE: unhandled control flow cjmp at cf 19
+// NOTE: unhandled control flow cjmp at cf 24
+// NOTE: unhandled control flow cjmp at cf 29
+// NOTE: unhandled control flow cjmp at cf 34
+// NOTE: unhandled control flow cjmp at cf 39
+// NOTE: unhandled control flow cjmp at cf 44
+// NOTE: unhandled control flow cjmp at cf 49
+// NOTE: unhandled control flow cjmp at cf 54
+// NOTE: unhandled control flow cjmp at cf 59
+// NOTE: unhandled control flow cjmp at cf 64
+// NOTE: unhandled control flow cjmp at cf 69
+// NOTE: unhandled control flow cjmp at cf 74
+// NOTE: unhandled control flow cjmp at cf 79
+
+#include "xenos_common.hlsli"
+
+float4 CylinderEnd[16] : register(c23); // float3[16]
+float4 CylinderStartAndRadius[16] : register(c7); // float4[16]
+float4 NumScarCylinders : register(c4); // float
+float4 OnlyScarFrontFaces : register(c2); // float
+float4 ScarFalloffPower : register(c6); // float
+float4 ScarIntensity : register(c5); // float
+float4 ScarLocus : register(c3); // float3
+float4 WMapChannel : register(c1); // float
+float4 WMapSampleOffset : register(c0); // float
+sampler2D WMapSampler : register(s0);
+
+struct PS_INPUT
+{
+    float4 texcoord0 : TEXCOORD0; // r0
+    float4 texcoord1 : TEXCOORD1; // r1
+    float4 texcoord2 : TEXCOORD2; // r2
+};
+
+struct PS_OUTPUT
+{
+    float4 color0 : COLOR0;
+};
+
+PS_OUTPUT main(PS_INPUT In)
+{
+    float4 r0 = In.texcoord0;
+    float4 r1 = In.texcoord1;
+    float4 r2 = In.texcoord2;
+    float4 r3 = 0.0;
+    float4 r4 = 0.0;
+    float4 r5 = 0.0;
+    float4 r6 = 0.0;
+    float4 oC0 = 0.0;
+    float ps = 0.0;
+    bool p0 = false;
+
+    r0.xy = r0.xy + WMapSampleOffset.xx;
+    r3 = tex2D(WMapSampler, r0.xy);
+    r0.xy = r0.yx * 512.0;
+    r0.xy = floor(r0.xy);
+    r4.xyz = r0.yyy + float3(-1.0, 1.0, 0.0);
+    r0.xyz = r0.xxx + float3(-1.0, 1.0, 0.0);
+    r0.yzw = r0.xyz * 0.103515625;
+    r0.x = r4.y * 0.001953125 + r0.y;
+    r4 = r4.xzxy * 0.001953125 + r0.ywzz;
+    r5 = r4.xwyz * 15731.0;
+    r4 = r4.xzwy * 1.4930293e+08 + 91097.0;
+    r0.xy = r0.xx * float2(1.4930293e+08, 15731.0);
+    r4 = r5.xzwy * r4.xwyz + 142231.0;
+    r5 = r4.xwyz * 4.656613e-11;
+    r0.z = 91097.0 + r0.x;
+    r0.x = r0.y * r0.z + 142231.0;
+    ps = (-abs(r0.x) > 0.0) ? 1.0 : 0.0;
+    r0.x = r0.x * 4.656613e-11;
+    r2.w = ps;
+    ps = frac(abs(r0.x));
+    r4 = frac(abs(r5.xwyz));
+    r0.y = ps;
+    r4 = saturate((r5.xwyz >= 0.0) ? r4 : -r4);
+    r4 = r4.xzwy * 0.7 + 0.3;
+    r0.x = saturate((r0.x >= 0.0) ? r0.y : -r0.y);
+    r0.y = r0.x * 0.7 + 0.3;
+    p0 = (NumScarCylinders.x > 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r0.x = dot(r4.zywx, float4(0.6, 0.1, 0.1, 0.1));
+    r1.w = r0.y * 0.1 + r0.x;
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[0].xyz - CylinderStartAndRadius[0].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[0].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[0].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.yz = float2((r0.zw >= 0.0));
+    r0.x = ps;
+    r0.y = dot(r0.yy, r0.zz) + 0.0;
+    r0.x = r0.y * r0.x;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 1.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r0.y, 0.0);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[1].xyz - CylinderStartAndRadius[1].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[1].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[1].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.zw = float2((r0.zw >= 0.0));
+    r0.y = ps;
+    r0.x = dot(r0.zz, r0.ww) + 0.0;
+    r0.x = r0.x * r0.y;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 2.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[2].xyz - CylinderStartAndRadius[2].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[2].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[2].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.yz = float2((r0.zw >= 0.0));
+    r0.x = ps;
+    r0.y = dot(r0.yy, r0.zz) + 0.0;
+    r0.x = r0.y * r0.x;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 3.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[3].xyz - CylinderStartAndRadius[3].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[3].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[3].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.zw = float2((r0.zw >= 0.0));
+    r0.y = ps;
+    r0.x = dot(r0.zz, r0.ww) + 0.0;
+    r0.x = r0.x * r0.y;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 4.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[4].xyz - CylinderStartAndRadius[4].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[4].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[4].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.yz = float2((r0.zw >= 0.0));
+    r0.x = ps;
+    r0.y = dot(r0.yy, r0.zz) + 0.0;
+    r0.x = r0.y * r0.x;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 5.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[5].xyz - CylinderStartAndRadius[5].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[5].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[5].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.zw = float2((r0.zw >= 0.0));
+    r0.y = ps;
+    r0.x = dot(r0.zz, r0.ww) + 0.0;
+    r0.x = r0.x * r0.y;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 6.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[6].xyz - CylinderStartAndRadius[6].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[6].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[6].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.yz = float2((r0.zw >= 0.0));
+    r0.x = ps;
+    r0.y = dot(r0.yy, r0.zz) + 0.0;
+    r0.x = r0.y * r0.x;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 7.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[7].xyz - CylinderStartAndRadius[7].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[7].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[7].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.zw = float2((r0.zw >= 0.0));
+    r0.y = ps;
+    r0.x = dot(r0.zz, r0.ww) + 0.0;
+    r0.x = r0.x * r0.y;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 8.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[8].xyz - CylinderStartAndRadius[8].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[8].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[8].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.yz = float2((r0.zw >= 0.0));
+    r0.x = ps;
+    r0.y = dot(r0.yy, r0.zz) + 0.0;
+    r0.x = r0.y * r0.x;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 9.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[9].xyz - CylinderStartAndRadius[9].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[9].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[9].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.zw = float2((r0.zw >= 0.0));
+    r0.y = ps;
+    r0.x = dot(r0.zz, r0.ww) + 0.0;
+    r0.x = r0.x * r0.y;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 1e+01));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[10].xyz - CylinderStartAndRadius[10].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[10].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[10].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.yz = float2((r0.zw >= 0.0));
+    r0.x = ps;
+    r0.y = dot(r0.yy, r0.zz) + 0.0;
+    r0.x = r0.y * r0.x;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 11.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[11].xyz - CylinderStartAndRadius[11].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[11].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[11].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.zw = float2((r0.zw >= 0.0));
+    r0.y = ps;
+    r0.x = dot(r0.zz, r0.ww) + 0.0;
+    r0.x = r0.x * r0.y;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 12.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[12].xyz - CylinderStartAndRadius[12].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[12].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[12].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.yz = float2((r0.zw >= 0.0));
+    r0.x = ps;
+    r0.y = dot(r0.yy, r0.zz) + 0.0;
+    r0.x = r0.y * r0.x;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 13.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[13].xyz - CylinderStartAndRadius[13].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[13].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[13].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.zw = float2((r0.zw >= 0.0));
+    r0.y = ps;
+    r0.x = dot(r0.zz, r0.ww) + 0.0;
+    r0.x = r0.x * r0.y;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 14.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[14].xyz - CylinderStartAndRadius[14].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[14].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[14].w;
+    r0.yz = r0.xy * r0.zx;
+    r0.x = ps;
+    ps = 1.0 - r0.z;
+    r0.x = saturate(r0.y * r0.x);
+    r0.w = ps;
+    ps = 1.0 - r0.x;
+    r0.yz = float2((r0.zw >= 0.0));
+    r0.x = ps;
+    r0.y = dot(r0.yy, r0.zz) + 0.0;
+    r0.x = r0.y * r0.x;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.y = ps;
+    ps = pow(2.0, r0.y);
+    r0.x = float((NumScarCylinders.x > 15.0));
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.y = ps;
+    r0.y = r0.y * r1.w;
+    p0 = (r0.x != 0.0);
+    ps = p0 ? 0.0 : 1.0;
+    r2.w = max(r2.w, r0.y);
+    // UNHANDLED control flow: cjmp
+    r6.xyz = CylinderEnd[15].xyz - CylinderStartAndRadius[15].xyz;
+    r4.xyz = -r1.xyz + CylinderStartAndRadius[15].xyz;
+    r0.x = dot(r6.zxy, r6.zxy);
+    ps = rsqrt(abs(r0.x));
+    r0.yzw = r6.zxy * r4.yzx;
+    r0.x = ps;
+    r5.xyz = r6.xyz * r0.xxx;
+    r0.yzw = r6.xzy * r4.yxz - r0.wzy;
+    r0.z = dot(r0.ywz, r0.ywz);
+    ps = sqrt(abs(r0.z));
+    r0.y = dot(r5.zxy, r4.zxy);
+    r0.z = ps;
+    ps = 1.0 / CylinderStartAndRadius[15].w;
+    r4.xy = r0.xy * r0.zx;
+    r0.x = ps;
+    r4.z = saturate(r4.x * r0.x);
+    r0.xy = -r4.yz + 1.0;
+    ps = (r4.y >= 0.0) ? 1.0 : 0.0;
+    r0.z = float((r0.x >= 0.0));
+    r0.w = ps;
+    r0.x = dot(r0.ww, r0.zz) + 0.0;
+    r0.x = r0.x * r0.y;
+    ps = log2(abs(r0.x));
+    r0.y = ps;
+    ps = ScarFalloffPower.x * r0.y;
+    r0.x = ps;
+    ps = pow(2.0, r0.x);
+    r0.y = saturate(ps);
+    ps = ScarIntensity.x * r0.y;
+    r0.x = ps;
+    r0.x = r0.x * r1.w;
+    r2.w = max(r2.w, r0.x);
+    r0.y = WMapChannel.x + 0.5;
+    ps = floor(r0.y);
+    r0.xzw = -r1.xyz + ScarLocus.xyz;
+    r1.x = ps;
+    r0.y = (r1.x == 0.0) ? r3.x : r3.y;
+    r1 = r1.xxxx + float4(-1.0, 0.0, -3.0, -2.0);
+    r0.x = dot(r0.wxz, r2.zxy);
+    r0.x = float((r0.x >= 0.05));
+    r0.y = (r1.w == 0.0) ? r3.z : r0.y;
+    r0.y = (r1.z == 0.0) ? r3.w : r0.y;
+    ps = (-1.0) - -r0.x;
+    r0.z = float((OnlyScarFrontFaces.x >= 0.5));
+    r0.x = ps;
+    r0.x = r0.x * r0.z + 1.0;
+    r0.x = r0.x * r2.w;
+    r0.x = max(r0.x, r0.y);
+    oC0 = (r1.yxwz == 0.0) ? r0.xxxx : r3;
+
+    PS_OUTPUT Out;
+    Out.color0 = oC0;
+    return Out;
+}

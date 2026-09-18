@@ -17,9 +17,7 @@ set(REDAHM_SOURCES
     src/main.cpp
     src/redahm_engine/hooks.cpp
     src/redahm_engine/dlc_unlock.cpp
-    src/redahm_engine/console_exec.cpp
     src/redahm_engine/movie_sequence.cpp
-    src/redahm_engine/framerate.cpp
 )
 
 if(WIN32)
@@ -28,9 +26,11 @@ else()
     add_executable(redahm ${REDAHM_SOURCES})
 endif()
 
-# SDK 0.9.0 moved Xenos GPU emulation out of the runtime into a plugin DLL that
-# is loaded at startup from the executable folder, so it has to be staged here.
-rexglue_setup_target(redahm GPU_PLUGINS xenos)
+# The game renders through the plume renderer in src/redahm_engine/gpu, so the
+# SDK runs detached (no Xenos GPU plugin) and the app owns presentation.
+rexglue_setup_target(redahm)
+
+include(src/redahm_engine/gpu/redahm_gpu.cmake)
 
 target_link_libraries(redahm)
 

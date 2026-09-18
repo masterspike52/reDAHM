@@ -1,11 +1,4 @@
 [[midasm_hook]]
-address = 0x82e837d4
-name = "Hook_VdSwap_FrameTick"
-registers = []
-after_instruction = true
-
-
-[[midasm_hook]]
 address = 0x8276d060
 name = "DisableMotionBlur"
 registers = ["r3"]
