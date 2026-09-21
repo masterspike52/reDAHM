@@ -12,14 +12,12 @@ this could be changed in the future by hand but would require more help).
 
 How to play it
 ----------------------------
-you can play the game by either downloading the release from releases and extracting the assets of your iso to a folder or you can download the game through goopie (which is reccomended as to only need 1 program that takes care of all of it) 
-the only thing you need to provide is the U.S. Version of Destroy all humans: Path of the furon for the xbox 360. you can download goopie from https://goopie.xyz/#/downloads then follow these instructions
+The preference is for you to download the latest release from releases then do the following
 
-1. open goopie launcher
-2. select destroy all humans: path of the furon from the libray
-3. click select game, this will ask you to select your ISO (Destroy all humans: Path of the Furon)
-4. once its done extracting your assets from the iso you can click install
-5. it will by default install the latest release, you can then click play.
+1. download https://digiex.net/attachments/isoextract-rar.7679/ this tool is used to extract your iso's contents for the xbox 360. please use it to extract your destroy all humans path of the furon (xbox360) assets from the iso
+2. run redahm.exe and use the gui to select your assets location
+
+If you have redahm.cfg in the folder with your exe you must either move your assets to the same directory that you specified previously or delete redahm.cfg so you can select a new location
 
 
 How to Build it
