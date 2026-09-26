@@ -1,0 +1,18 @@
+[submodule "thirdparty/plume"]
+	path = thirdparty/plume
+	url = https://github.com/renderbag/plume.git
+[submodule "thirdparty/reblue-XenosRecomp/thirdparty/dxc-bin"]
+	path = thirdparty/reblue-XenosRecomp/thirdparty/dxc-bin
+	url = https://github.com/renderbag/dxc-bin.git
+[submodule "thirdparty/reblue-XenosRecomp/thirdparty/fmt"]
+	path = thirdparty/reblue-XenosRecomp/thirdparty/fmt
+	url = https://github.com/fmtlib/fmt.git
+[submodule "thirdparty/reblue-XenosRecomp/thirdparty/smol-v"]
+	path = thirdparty/reblue-XenosRecomp/thirdparty/smol-v
+	url = https://github.com/aras-p/smol-v
+[submodule "thirdparty/reblue-XenosRecomp/thirdparty/xxHash"]
+	path = thirdparty/reblue-XenosRecomp/thirdparty/xxHash
+	url = https://github.com/Cyan4973/xxHash.git
+[submodule "thirdparty/reblue-XenosRecomp/thirdparty/zstd"]
+	path = thirdparty/reblue-XenosRecomp/thirdparty/zstd
+	url = https://github.com/facebook/zstd.git

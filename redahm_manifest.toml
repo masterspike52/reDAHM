@@ -8,3 +8,18 @@ out_directory_path = "generated"
 includes = [
  "redahm_config.toml"
 ]
+
+
+
+setjmp_address = 0x82ff2180
+longjmp_address = 0x82ff1e60
+
+
+skip_lr = true
+ctr_as_local = true
+xer_as_local = true
+cr_as_local = true
+reserved_as_local = true
+non_volatile_as_local = true
+non_argument_as_local = true
+

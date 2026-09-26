@@ -10,6 +10,9 @@
 #include <thread>
 
 #include <rex/rex_app.h>
+#include "redahm_engine/crash_reporter.h"
+#include "redahm_engine/graphics_menu.h"
+#include "redahm_engine/mod_loader.h"
 #include "redahm_engine/path_setup_wizard.h"
 #include <rex/runtime.h>
 #include "redahm_engine/gpu/gpu.h"
@@ -48,6 +51,21 @@ class RedahmApp : public rex::ReXApp {
       g_fps_overlay = fps;
   }
 
+  // The config the SDK loads (redahm.toml beside the exe); the GRAPHICS page
+  // in the Options menu saves there.
+  void OnConfigurePaths(rex::PathConfig& paths) override {
+      // The earliest hook the app gets; setup from here on can throw.
+      redahm::crash::InstallTerminateHandler();
+      redahm::graphics_menu::SetConfigPath(paths.config_path);
+      redahm::mods::SetConfigPath(paths.config_path);
+  }
+
+  // game: is mounted by now and the title hasn't run: put the enabled mods in
+  // front of it.
+  void OnPostSetup() override {
+      redahm::mods::Install(runtime());
+  }
+
   std::optional<rex::PathConfig> OnFinalizePaths(
       const rex::PathConfig& defaults,
       std::function<void(rex::PathConfig)> resume) override
@@ -75,6 +93,7 @@ class RedahmApp : public rex::ReXApp {
   }
 
   void OnPreLaunchModule() override {
+      redahm::crash::InstallCrashReporter();
       StartRenderer();
   }
 

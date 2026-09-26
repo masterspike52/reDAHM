@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include <rex/ppc/func.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/xmemory.h>
 #include <rex/types.h>
@@ -12,12 +13,34 @@ inline rex::memory::Memory* Memory() {
   return REX_KERNEL_MEMORY();
 }
 
-// Host pointer for a guest virtual address. The memory stays big-endian.
+// The host base of the guest address space. A plain global rather than a
+// function-local static: the guard of a local static is a thread-local epoch
+// check on every call, and this is on every guest read.
+inline u8* g_base = nullptr;
+
+inline u8* Base() {
+  u8* base = g_base;
+  if (!base) [[unlikely]]
+    base = g_base = Memory()->virtual_membase();
+  return base;
+}
+
+// Host pointer for a guest virtual address, the way the recompiled code
+// computes it (REX_RAW_ADDR in the generated pch): the base plus the address,
+// plus the 0x1000 the physical heaps sit at in the 0xE window where the host
+// maps memory in 64 KB granules. Memory::TranslateVirtual gives the same
+// answer through the kernel state and a heap lookup, which made every guest
+// read here several times slower than the recompiled code's own.
 template <typename T>
 inline T* At(u32 va) {
   if (!va)
     return nullptr;
-  return Memory()->TranslateVirtual<T*>(va);
+#if defined(_WIN32)
+  const u32 offset = va >= 0xE0000000u ? 0x1000u : 0u;
+#else
+  const u32 offset = 0;
+#endif
+  return reinterpret_cast<T*>(Base() + va + offset);
 }
 
 template <typename T>
@@ -43,6 +66,26 @@ inline void Store(u32 va, T value) {
 // and lands 0x1000 bytes short of the title's own view of the same memory. A
 // raw physical address is therefore read through the 0xE window rather than the
 // physical view.
+// A guest function's host implementation, remembered per address: the
+// runtime's ResolveIndirectFunction was half the cost of every call the
+// native code makes back into the game. Functions never move, so entries
+// never go stale. Each thread keeps its own, so no entry is ever shared.
+inline PPCFunc* ResolveFunction(u32 guest_address) {
+  struct Entry {
+    u32 guest_address = 0;
+    PPCFunc* fn = nullptr;
+  };
+  constexpr u32 kEntries = 1024;
+  thread_local Entry entries[kEntries];
+  Entry& entry = entries[(guest_address >> 2) & (kEntries - 1)];
+  if (entry.guest_address == guest_address && entry.fn)
+    return entry.fn;
+  PPCFunc* fn = rex::runtime::ResolveIndirectFunction(guest_address);
+  if (fn)
+    entry = {guest_address, fn};
+  return fn;
+}
+
 inline u8* AtGpuAddress(u32 address) {
   if (!address)
     return nullptr;

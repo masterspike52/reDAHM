@@ -17,10 +17,25 @@ set(REDAHM_SOURCES
     src/main.cpp
     src/redahm_engine/hooks.cpp
     src/redahm_engine/dlc_unlock.cpp
+    src/redahm_engine/graphics_menu.cpp
+    src/redahm_engine/graphics_settings.cpp
+    src/redahm_engine/ufo_stealth.cpp
+    src/redahm_engine/native_foliage.cpp
+    src/redahm_engine/native_material.cpp
+    src/redahm_engine/native_scene.cpp
+    src/redahm_engine/kynapse_unload.cpp
+    src/redahm_engine/crash_reporter.cpp
     src/redahm_engine/movie_sequence.cpp
+    src/redahm_engine/mission_audio.cpp
+    src/redahm_engine/sandbox_restore.cpp
+    src/redahm_engine/dialog_trace.cpp
+    src/redahm_engine/mod_loader.cpp
+    src/redahm_engine/mod_build.cpp
+    src/redahm_engine/mod_packages.cpp
 )
 
 if(WIN32)
+list(APPEND REDAHM_SOURCES icon/app.rc)
     add_executable(redahm WIN32 ${REDAHM_SOURCES})
 else()
     add_executable(redahm ${REDAHM_SOURCES})

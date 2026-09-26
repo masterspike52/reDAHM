@@ -49,6 +49,11 @@ inline constexpr u32 kViewportEnableTransformMask = 0x3F;
 inline constexpr u32 kBlendState1 = 0x2958;
 inline constexpr u32 kBlendState2 = 0x295C;
 inline constexpr u32 kBlendState3 = 0x2960;
+// PA_SU_VTX_CNTL. Bit 0 is pix_center, written by D3DRS_HALFPIXELOFFSET
+// (render state 81, sub_82E79CB8); it defaults to 0, which puts pixel centers
+// on integer coordinates as Direct3D 9 does.
+inline constexpr u32 kVertexControl = 0x29C0;
+inline constexpr u32 kVertexControlPixelCenter = 0x1;
 inline constexpr u32 kSlopeScaleDepthBias = 0x2A50;  // state 51
 inline constexpr u32 kDepthBias = 0x2A54;            // state 52
 inline constexpr u32 kScissorTestEnable = 0x2E50;    // state 50

@@ -46,7 +46,7 @@ plume::RenderTextureAddressMode ConvertClamp(xenos::ClampMode mode) {
 
 }  // namespace
 
-u32 GetSamplerSlotLocked(const u32 fetch_dwords[6], bool is_3d) {
+u32 GetSamplerSlotLocked(const u32 fetch_dwords[6], bool is_3d, bool allow_anisotropy) {
   xenos::xe_gpu_texture_fetch_t fetch;
   std::memcpy(&fetch, fetch_dwords, sizeof(fetch));
 
@@ -54,8 +54,19 @@ u32 GetSamplerSlotLocked(const u32 fetch_dwords[6], bool is_3d) {
   const bool min_point = fetch.min_filter == xenos::TextureFilter::kPoint;
   const bool mip_point = fetch.mip_filter == xenos::TextureFilter::kPoint;
   const bool mip_base_only = fetch.mip_filter == xenos::TextureFilter::kBaseMap;
-  const i32 aniso = settings::Anisotropy();
-  const bool use_aniso = aniso > 1 && !mag_point && !min_point && !mip_point;
+  // redahm_anisotropy upgrades the title's texture assets only. Textures the
+  // GPU wrote hold data, not art: PotF's variance shadow maps sample depth
+  // moments through a linear sampler, and averaging them along an anisotropic
+  // footprint skewed the variance on walls seen at a grazing angle, so shadow
+  // streaks crawled over buildings as the camera turned.
+  // A point mip filter does not rule it out: Xenos filters anisotropically
+  // whatever the mip filter, and UE3's point-mip world textures (the casino
+  // marquee dots) otherwise pick their level off the long axis of a grazing
+  // footprint, landing on cooked 2x2/1x1 levels that are nearly black, so the
+  // dots cut off at a hard seam down the rim.
+  const u32 aniso = settings::Anisotropy();
+  const bool use_aniso =
+      allow_anisotropy && aniso > 1 && !mag_point && !min_point && !mip_base_only;
   const auto border = fetch.border_color == xenos::BorderColor::k_ABGR_White
                           ? plume::RenderBorderColor::OPAQUE_WHITE
                           : plume::RenderBorderColor::TRANSPARENT_BLACK;
@@ -80,7 +91,7 @@ u32 GetSamplerSlotLocked(const u32 fetch_dwords[6], bool is_3d) {
   if (mip_base_only)
     desc.maxLOD = 0.0f;
   desc.anisotropyEnabled = use_aniso;
-  desc.maxAnisotropy = use_aniso ? u32(aniso) : 1;
+  desc.maxAnisotropy = use_aniso ? aniso : 1;
   desc.borderColor = border;
 
   const u32 slot = AllocateSamplerSlotLocked();

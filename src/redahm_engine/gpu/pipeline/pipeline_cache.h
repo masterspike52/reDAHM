@@ -46,7 +46,10 @@ struct PipelineKey {
 
   i32 depth_bias = 0;
   float slope_scaled_depth_bias = 0.0f;
-  u32 reserved = 0;
+  // Streams stepped once per instance rather than per vertex: the instance
+  // data of a draw UE3 instances through its vertex shader.
+  u16 instance_streams = 0;
+  u16 reserved = 0;
 };
 static_assert(sizeof(PipelineKey) == 128);
 
@@ -55,7 +58,15 @@ inline bool operator==(const PipelineKey& a, const PipelineKey& b) {
 }
 
 // Needs Host().mutex. nullptr when a shader is missing or creation failed
-// (failures are cached).
+// (failures are cached). A pipeline built here is recorded to
+// redahm_pipelines.bin for the next session's warm-up.
 plume::RenderPipeline* GetPipelineLocked(const PipelineKey& key);
+
+// Starts background workers that build the recorded pipelines as the title
+// creates their shaders and declarations. Call once the host device exists.
+void StartPipelineWarmup();
+
+// Stops and joins the workers. Call before the host device goes away.
+void StopPipelineWarmup();
 
 }  // namespace redahm::gpu

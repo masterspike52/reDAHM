@@ -26,7 +26,9 @@ bool UploadRgba8Locked(u32 width, u32 height, const u8* rgba,
   auto& h = Host();
   if (!h.ready || !h.list_open)
     return false;
-  plume::RenderCommandList* list = h.frames[h.frame].list.get();
+  // The frame's recording, which replays before the present pass the overlay
+  // draws in, so the upload lands first.
+  plume::RenderCommandList* list = &h.frames[h.frame].recording;
 
   plume::RenderTextureDesc desc;
   desc.dimension = plume::RenderTextureDimension::TEXTURE_2D;

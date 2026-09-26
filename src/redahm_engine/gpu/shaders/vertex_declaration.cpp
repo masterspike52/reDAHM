@@ -3,6 +3,7 @@
 #define SHADER_COMMON_SPEC_CONSTANTS_ONLY
 #include <shader_common.h>
 
+#include <atomic>
 #include <cstring>
 #include <iterator>
 #include <mutex>
@@ -72,6 +73,8 @@ bool IsSixteenBitPair(DeclType type) {
 std::mutex g_mutex;
 std::unordered_map<u64, std::unique_ptr<HostVertexDeclaration>> g_by_hash;
 std::unordered_map<u32, HostVertexDeclaration*> g_by_address;
+std::atomic<u64> g_generation{0};
+std::atomic<u64> g_registrations{0};
 
 std::unique_ptr<HostVertexDeclaration> Build(const d3d::VertexElement* elements, u32 count,
                                              u64 hash) {
@@ -169,16 +172,33 @@ HostVertexDeclaration* RegisterVertexDeclaration(u32 declaration_va,
 
   std::lock_guard lock(g_mutex);
   auto& shared = g_by_hash[hash];
-  if (!shared)
+  if (!shared) {
     shared = Build(normalized.data(), count, hash);
+    g_generation.fetch_add(1, std::memory_order_release);
+  }
   g_by_address[declaration_va] = shared.get();
+  g_registrations.fetch_add(1, std::memory_order_release);
   return shared.get();
+}
+
+u64 VertexDeclarationRegistrations() {
+  return g_registrations.load(std::memory_order_acquire);
 }
 
 HostVertexDeclaration* FindVertexDeclaration(u32 declaration_va) {
   std::lock_guard lock(g_mutex);
   auto it = g_by_address.find(declaration_va);
   return it != g_by_address.end() ? it->second : nullptr;
+}
+
+HostVertexDeclaration* FindVertexDeclarationByHash(u64 hash) {
+  std::lock_guard lock(g_mutex);
+  auto it = g_by_hash.find(hash);
+  return it != g_by_hash.end() ? it->second.get() : nullptr;
+}
+
+u64 VertexDeclarationGeneration() {
+  return g_generation.load(std::memory_order_acquire);
 }
 
 }  // namespace redahm::gpu

@@ -132,9 +132,39 @@ file(MAKE_DIRECTORY "${REDAHM_GPU_GEN_DIR}/hlsl")
 foreach(shader IN ITEMS fullscreen_vs imgui_vs)
     redahm_host_shader(${shader} vs_6_0)
 endforeach()
-foreach(shader IN ITEMS present_ps resolve_color_ps resolve_depth_ps imgui_ps bink_ps)
+foreach(shader IN ITEMS present_ps resolve_color_ps resolve_depth_ps guest_size_ps imgui_ps bink_ps)
     redahm_host_shader(${shader} ps_6_0)
 endforeach()
+
+# Replacements for specific guest shaders (shaders/guest_shaders.cpp), written
+# against shader_common.h and compiled with XenosRecomp's own arguments.
+function(redahm_override_shader STEM)
+    foreach(backend IN ITEMS dxil spirv)
+        if(backend STREQUAL "dxil")
+            if(NOT WIN32)
+                continue()
+            endif()
+            set(format_args -Wno-ignored-attributes -Qstrip_reflect)
+        else()
+            set(format_args -spirv -fvk-use-dx-layout)
+        endif()
+        set(out "${REDAHM_GPU_GEN_DIR}/hlsl/${STEM}.${backend}.h")
+        add_custom_command(
+            OUTPUT "${out}"
+            COMMAND ${DIRECTX_DXC_TOOL}
+                    -T ps_6_0 -HV 2021 -all-resources-bound ${format_args} -Qstrip_debug
+                    -DREDAHM_RECOMP -I "${REDAHM_XENOS_RECOMP_DIR}/XenosRecomp"
+                    -Fh "${out}" -Vn g_${STEM}_${backend}
+                    "${REDAHM_HLSL_DIR}/overrides/${STEM}.hlsl"
+            DEPENDS "${REDAHM_HLSL_DIR}/overrides/${STEM}.hlsl" "${REDAHM_SHADER_COMMON_H}"
+            COMMENT "Compiling override ${STEM}.hlsl (${backend})"
+            VERBATIM)
+        list(APPEND REDAHM_HOST_SHADER_HEADERS "${out}")
+    endforeach()
+    set(REDAHM_HOST_SHADER_HEADERS ${REDAHM_HOST_SHADER_HEADERS} PARENT_SCOPE)
+endfunction()
+
+redahm_override_shader(water_ps)
 add_custom_target(redahm_host_shaders DEPENDS ${REDAHM_HOST_SHADER_HEADERS})
 
 #------------------------------------------------------------------------------

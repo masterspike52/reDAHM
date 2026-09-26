@@ -11,6 +11,7 @@
 #if defined(_WIN32)
 #include "hlsl/bink_ps.dxil.h"
 #include "hlsl/fullscreen_vs.dxil.h"
+#include "hlsl/guest_size_ps.dxil.h"
 #include "hlsl/imgui_ps.dxil.h"
 #include "hlsl/imgui_vs.dxil.h"
 #include "hlsl/present_ps.dxil.h"
@@ -19,6 +20,7 @@
 #endif
 #include "hlsl/bink_ps.spirv.h"
 #include "hlsl/fullscreen_vs.spirv.h"
+#include "hlsl/guest_size_ps.spirv.h"
 #include "hlsl/imgui_ps.spirv.h"
 #include "hlsl/imgui_vs.spirv.h"
 #include "hlsl/present_ps.spirv.h"
@@ -46,8 +48,8 @@ struct ShaderBlob {
 const ShaderBlob kShaderBlobs[] = {
     REDAHM_HOST_SHADER(fullscreen_vs),    REDAHM_HOST_SHADER(present_ps),
     REDAHM_HOST_SHADER(resolve_color_ps), REDAHM_HOST_SHADER(resolve_depth_ps),
-    REDAHM_HOST_SHADER(imgui_vs),         REDAHM_HOST_SHADER(imgui_ps),
-    REDAHM_HOST_SHADER(bink_ps),
+    REDAHM_HOST_SHADER(guest_size_ps),    REDAHM_HOST_SHADER(imgui_vs),
+    REDAHM_HOST_SHADER(imgui_ps),         REDAHM_HOST_SHADER(bink_ps),
 };
 
 #undef REDAHM_HOST_SHADER
@@ -57,6 +59,7 @@ struct PipelineState {
   std::unique_ptr<plume::RenderShader> present_ps;
   std::unique_ptr<plume::RenderShader> resolve_color_ps;
   std::unique_ptr<plume::RenderShader> resolve_depth_ps;
+  std::unique_ptr<plume::RenderShader> guest_size_ps;
   std::unique_ptr<plume::RenderShader> imgui_vs;
   std::unique_ptr<plume::RenderShader> imgui_ps;
   std::unique_ptr<plume::RenderShader> bink_ps;
@@ -64,6 +67,7 @@ struct PipelineState {
   std::unique_ptr<plume::RenderPipeline> imgui;
   std::unordered_map<plume::RenderFormat, std::unique_ptr<plume::RenderPipeline>> resolve_color;
   std::unordered_map<plume::RenderFormat, std::unique_ptr<plume::RenderPipeline>> resolve_depth;
+  std::unordered_map<plume::RenderFormat, std::unique_ptr<plume::RenderPipeline>> guest_size;
   std::unordered_map<plume::RenderFormat, std::unique_ptr<plume::RenderPipeline>> bink;
 };
 
@@ -118,12 +122,13 @@ bool InitHostPipelinesLocked() {
   g_pipelines.present_ps = CreateHostShader("present_ps");
   g_pipelines.resolve_color_ps = CreateHostShader("resolve_color_ps");
   g_pipelines.resolve_depth_ps = CreateHostShader("resolve_depth_ps");
+  g_pipelines.guest_size_ps = CreateHostShader("guest_size_ps");
   g_pipelines.imgui_vs = CreateHostShader("imgui_vs");
   g_pipelines.imgui_ps = CreateHostShader("imgui_ps");
   g_pipelines.bink_ps = CreateHostShader("bink_ps");
   if (!g_pipelines.fullscreen_vs || !g_pipelines.present_ps || !g_pipelines.resolve_color_ps ||
-      !g_pipelines.resolve_depth_ps || !g_pipelines.imgui_vs || !g_pipelines.imgui_ps ||
-      !g_pipelines.bink_ps) {
+      !g_pipelines.resolve_depth_ps || !g_pipelines.guest_size_ps || !g_pipelines.imgui_vs ||
+      !g_pipelines.imgui_ps || !g_pipelines.bink_ps) {
     GPU_ERROR("Failed to create the renderer's own shaders");
     return false;
   }
@@ -178,6 +183,12 @@ plume::RenderPipeline* ResolveDepthPipelineLocked(plume::RenderFormat destinatio
       g_pipelines.resolve_depth,
       FullscreenDesc(g_pipelines.resolve_depth_ps.get(), destination_format), destination_format,
       "resolve-depth");
+}
+
+plume::RenderPipeline* GuestSizePipelineLocked(plume::RenderFormat destination_format) {
+  return FullscreenPipelineLocked(
+      g_pipelines.guest_size, FullscreenDesc(g_pipelines.guest_size_ps.get(), destination_format),
+      destination_format, "guest-size");
 }
 
 plume::RenderPipeline* BinkPipelineLocked(plume::RenderFormat target_format) {

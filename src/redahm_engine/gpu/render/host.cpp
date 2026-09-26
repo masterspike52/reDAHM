@@ -4,17 +4,22 @@
 #include <cstring>
 #include <thread>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <SDL3/SDL_video.h>
 #endif
 
 #include <plume_render_interface_builders.h>
 #include <rex/ui/window.h>
 
+#include "core/frame_cost.h"
 #include "core/log.h"
 #include "core/settings.h"
 #include "render/backend.h"
+#include "render/gpu_thread.h"
 #include "render/host_pipelines.h"
+#include "render/occlusion.h"
 #include "render/upload_heap.h"
 
 namespace redahm::gpu {
@@ -192,6 +197,168 @@ void DrainRetiredLocked(HostState& h, FrameSlot& slot) {
   retired.buffers.clear();
 }
 
+//------------------------------------------------------------------------------
+// Submit thread
+//------------------------------------------------------------------------------
+
+// The title's render thread only records (DeferredCommandList); replaying the
+// recordings onto the D3D12/Vulkan command lists, submitting them, acquiring
+// the swap chain image and presenting all happen here. The render thread
+// saturated in the busiest scenes, and the backend calls and the driver under
+// them were a quarter of the renderer's share of it.
+
+void QueueSlotLocked(HostState& h, u32 index, bool present) {
+  FrameSlot& slot = h.frames[index];
+  slot.present = present;
+  occlusion::QueueSlotLocked(index);
+  {
+    std::lock_guard lock(h.submit_mutex);
+    slot.queued = true;
+    h.submit_queue.push_back(index);
+  }
+  h.submit_wake.notify_one();
+}
+
+// Returns once the submit thread has submitted the slot and the GPU has run
+// it. Only the render thread waits on slot fences.
+void WaitForSlotLocked(HostState& h, FrameSlot& slot) {
+  bool submitted;
+  {
+    std::unique_lock lock(h.submit_mutex);
+    h.submit_done.wait(lock, [&] { return !slot.queued; });
+    submitted = slot.submitted;
+    slot.submitted = false;
+  }
+  if (submitted)
+    h.queue->waitForCommandFence(slot.fence.get());
+}
+
+// Waits for everything submitted so far, through the submit thread's own
+// fence: the slot fences belong to the render thread's waits.
+void WaitForIdleOnSubmitThread(HostState& h) {
+  h.idle_list->begin();
+  h.idle_list->end();
+  const plume::RenderCommandList* lists[] = {h.idle_list.get()};
+  h.queue->executeCommandLists(lists, 1, nullptr, 0, nullptr, 0, h.idle_fence.get());
+  h.queue->waitForCommandFence(h.idle_fence.get());
+}
+
+bool ResizeSwapChainOnSubmitThread(HostState& h) {
+  if (!h.swap_chain)
+    return false;
+  // Every back buffer reference must be gone before resize() releases them.
+  WaitForIdleOnSubmitThread(h);
+  h.swap_framebuffers.clear();
+  h.render_semaphores.clear();
+  if (!h.swap_chain->resize()) {
+    if (h.swap_chain->getWidth() && h.swap_chain->getHeight())
+      GPU_ERROR("Swap chain resize failed");
+    return false;
+  }
+  if (h.swap_chain->isEmpty() || !BuildSwapFramebuffersLocked(h))
+    return false;
+  h.swap_width.store(h.swap_chain->getWidth(), std::memory_order_release);
+  h.swap_height.store(h.swap_chain->getHeight(), std::memory_order_release);
+  return true;
+}
+
+bool AcquireBackBufferOnSubmitThread(HostState& h, FrameSlot& slot, u32& index) {
+  const bool resize = h.resize_requested.exchange(false, std::memory_order_acq_rel);
+  if (resize || h.swap_chain->needsResize() || h.swap_framebuffers.empty())
+    ResizeSwapChainOnSubmitThread(h);
+  if (h.swap_framebuffers.empty())
+    return false;
+  if (!h.swap_chain->acquireTexture(slot.acquire_semaphore.get(), &index)) {
+    if (!ResizeSwapChainOnSubmitThread(h) ||
+        !h.swap_chain->acquireTexture(slot.acquire_semaphore.get(), &index)) {
+      return false;
+    }
+  }
+  return index < h.swap_framebuffers.size();
+}
+
+void AddTiming(std::atomic<u64>& total, std::atomic<u64>& max, u64 ns) {
+  total.fetch_add(ns, std::memory_order_relaxed);
+  u64 seen = max.load(std::memory_order_relaxed);
+  while (ns > seen && !max.compare_exchange_weak(seen, ns, std::memory_order_relaxed)) {
+  }
+}
+
+void SubmitSlotOnSubmitThread(HostState& h, FrameSlot& slot) {
+  using Clock = std::chrono::steady_clock;
+  const auto start = Clock::now();
+  plume::RenderCommandList* list = slot.list.get();
+  list->begin();
+  slot.recording.Replay(list, nullptr, nullptr);
+
+  u32 back_index = 0;
+  const bool have_back = slot.present && AcquireBackBufferOnSubmitThread(h, slot, back_index);
+  if (have_back) {
+    slot.present_recording.Replay(list, h.swap_framebuffers[back_index].get(),
+                                  h.swap_chain->getTexture(back_index));
+  }
+  list->end();
+
+  const plume::RenderCommandList* lists[] = {list};
+  plume::RenderCommandSemaphore* waits[] = {slot.acquire_semaphore.get()};
+  plume::RenderCommandSemaphore* signals[] = {
+      have_back ? h.render_semaphores[back_index].get() : nullptr};
+  h.queue->executeCommandLists(lists, 1, have_back ? waits : nullptr, have_back ? 1 : 0,
+                               have_back ? signals : nullptr, have_back ? 1 : 0, slot.fence.get());
+  const auto submitted = Clock::now();
+  AddTiming(h.submit_ns, h.submit_max_ns,
+            u64(std::chrono::duration_cast<std::chrono::nanoseconds>(submitted - start).count()));
+
+  if (have_back) {
+    h.swap_chain->setVsyncEnabled(settings::Vsync());
+    if (!h.swap_chain->present(back_index, signals, 1))
+      h.resize_requested.store(true, std::memory_order_release);
+    AddTiming(h.present_ns, h.present_max_ns,
+              u64(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - submitted)
+                      .count()));
+  }
+  h.submit_count.fetch_add(1, std::memory_order_relaxed);
+}
+
+void SubmitThreadMain() {
+#if defined(_WIN32)
+  // Presents and the frame's GPU work wait on this thread; keep it ahead of the
+  // pipeline warm-up workers.
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#endif
+  auto& h = Host();
+  for (;;) {
+    u32 index;
+    {
+      std::unique_lock lock(h.submit_mutex);
+      h.submit_wake.wait(lock, [&] { return h.submit_stop || !h.submit_queue.empty(); });
+      if (h.submit_queue.empty())
+        return;
+      index = h.submit_queue.front();
+      h.submit_queue.pop_front();
+    }
+    FrameSlot& slot = h.frames[index];
+    SubmitSlotOnSubmitThread(h, slot);
+    occlusion::SlotSubmitted(index);
+    {
+      std::lock_guard lock(h.submit_mutex);
+      slot.queued = false;
+      slot.submitted = true;
+    }
+    h.submit_done.notify_all();
+  }
+}
+
+void StopSubmitThread(HostState& h) {
+  {
+    std::lock_guard lock(h.submit_mutex);
+    h.submit_stop = true;
+  }
+  h.submit_wake.notify_all();
+  if (h.submit_thread.joinable())
+    h.submit_thread.join();
+}
+
 }  // namespace
 
 HostState& Host() {
@@ -255,6 +422,12 @@ bool CreateHostDevice(rex::ui::Window* window) {
       return false;
     }
   }
+  h.idle_list = h.queue->createCommandList();
+  h.idle_fence = h.device->createCommandFence();
+  if (!h.idle_list || !h.idle_fence) {
+    GPU_ERROR("Failed to create the submit thread's idle fence");
+    return false;
+  }
 
   plume::RenderWindow render_window{};
   if (!GetRenderWindow(window, render_window)) {
@@ -291,7 +464,11 @@ bool CreateHostDevice(rex::ui::Window* window) {
 
   if (!InitHostPipelinesLocked())
     return false;
+  occlusion::InitLocked();
 
+  h.swap_width.store(h.swap_chain->getWidth(), std::memory_order_release);
+  h.swap_height.store(h.swap_chain->getHeight(), std::memory_order_release);
+  h.submit_thread = std::thread(SubmitThreadMain);
   h.ready = true;
   return true;
 }
@@ -299,14 +476,21 @@ bool CreateHostDevice(rex::ui::Window* window) {
 void ShutdownHost() {
   auto& h = Host();
   h.shutting_down.store(true, std::memory_order_release);
+  // Queued packets are dropped. The GPU thread may be parked in Present's
+  // overlay marshal, waiting on the UI thread that is running this, so it is
+  // not waited for long.
+  gpu_thread::Stop(250);
 
-  // The render thread may be parked in Present's overlay marshal, holding the
-  // lock and waiting on the UI thread that is running this. Don't hang on it.
+  // The GPU thread may still hold the lock for the same reason. Don't hang on
+  // it.
   std::unique_lock lock(h.mutex, std::defer_lock);
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
   while (!lock.try_lock()) {
     if (std::chrono::steady_clock::now() >= deadline) {
       GPU_WARN("Renderer busy at shutdown, skipping the GPU drain");
+      // The process is on its way out; a joinable thread would abort it.
+      if (h.submit_thread.joinable())
+        h.submit_thread.detach();
       return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -314,6 +498,7 @@ void ShutdownHost() {
   if (!h.device)
     return;
   FlushAndWaitLocked();
+  StopSubmitThread(h);
   h.ready = false;
   h.swap_framebuffers.clear();
   h.render_semaphores.clear();
@@ -326,22 +511,36 @@ plume::RenderCommandList* OpenCommandListLocked() {
     return nullptr;
   FrameSlot& slot = h.frames[h.frame];
   if (h.list_open)
-    return slot.list.get();
+    return &slot.recording;
 
-  slot.list->begin();
+  slot.recording.begin();
+  slot.present_recording.begin();
+  slot.present = false;
   if (!h.null_textures_transitioned) {
     plume::RenderTextureBarrier barriers[kReservedTextureSlots];
     for (u32 i = 0; i < kReservedTextureSlots; ++i) {
       barriers[i] =
           plume::RenderTextureBarrier(h.null_textures[i].get(), plume::RenderTextureLayout::SHADER_READ);
     }
-    slot.list->barriers(plume::RenderBarrierStage::GRAPHICS, barriers, kReservedTextureSlots);
+    slot.recording.barriers(plume::RenderBarrierStage::GRAPHICS, barriers, kReservedTextureSlots);
     h.null_textures_transitioned = true;
   }
-  BindSharedLayoutLocked(slot.list.get());
+  BindSharedLayoutLocked(&slot.recording);
   h.list_open = true;
   ++h.list_generation;
-  return slot.list.get();
+  return &slot.recording;
+}
+
+plume::RenderCommandList* OpenPresentListLocked() {
+  auto& h = Host();
+  if (!h.list_open)
+    return nullptr;
+  FrameSlot& slot = h.frames[h.frame];
+  // Replay continues on the same command list, so the recording's bindings
+  // carry over; bind the shared layout anyway, the present pass starts fresh.
+  slot.present_recording.begin();
+  BindSharedLayoutLocked(&slot.present_recording);
+  return &slot.present_recording;
 }
 
 void BindSharedLayoutLocked(plume::RenderCommandList* list) {
@@ -353,46 +552,36 @@ void BindSharedLayoutLocked(plume::RenderCommandList* list) {
   list->setGraphicsDescriptorSet(h.sampler_set.get(), 3);
 }
 
-void SubmitFrameLocked(plume::RenderCommandSemaphore** wait, u32 wait_count,
-                       plume::RenderCommandSemaphore** signal, u32 signal_count) {
+void SubmitFrameLocked(bool present) {
   auto& h = Host();
-  FrameSlot& current = h.frames[h.frame];
   if (h.list_open) {
-    current.list->end();
-    const plume::RenderCommandList* lists[] = {current.list.get()};
-    h.queue->executeCommandLists(lists, 1, wait, wait_count, signal, signal_count,
-                                 current.fence.get());
-    current.submitted = true;
+    QueueSlotLocked(h, h.frame, present);
     h.list_open = false;
   }
 
-  // The slot about to be reused may still be executing. Once its fence
-  // signals, everything retired while it recorded is unreferenced.
+  // The slot about to be reused may still be replaying or executing. Once the
+  // submit thread is done with it and its fence signals, everything retired
+  // while it recorded is unreferenced and its upload memory is free.
   h.frame = (h.frame + 1) % kFrameCount;
   FrameSlot& next = h.frames[h.frame];
-  if (next.submitted) {
-    h.queue->waitForCommandFence(next.fence.get());
-    next.submitted = false;
+  {
+    cost::ScopedCost timed(cost::Costs().ring_waits);
+    WaitForSlotLocked(h, next);
   }
+  occlusion::SlotReusedLocked(h.frame);
   DrainRetiredLocked(h, next);
   ResetUploadSlotLocked(h.frame);
 }
 
 void FlushAndWaitLocked() {
   auto& h = Host();
-  FrameSlot& current = h.frames[h.frame];
   if (h.list_open) {
-    current.list->end();
-    const plume::RenderCommandList* lists[] = {current.list.get()};
-    h.queue->executeCommandLists(lists, 1, nullptr, 0, nullptr, 0, current.fence.get());
-    current.submitted = true;
+    QueueSlotLocked(h, h.frame, false);
     h.list_open = false;
   }
-  for (auto& slot : h.frames) {
-    if (slot.submitted) {
-      h.queue->waitForCommandFence(slot.fence.get());
-      slot.submitted = false;
-    }
+  for (u32 i = 0; i < kFrameCount; ++i) {
+    WaitForSlotLocked(h, h.frames[i]);
+    occlusion::SlotReusedLocked(i);
   }
 }
 
@@ -511,24 +700,6 @@ std::unique_ptr<plume::RenderPipeline> CreateGraphicsPipeline(
 
 void RequestResize() {
   Host().resize_requested.store(true, std::memory_order_release);
-}
-
-bool ResizeSwapChainLocked() {
-  auto& h = Host();
-  if (!h.swap_chain)
-    return false;
-  // Every back buffer reference must be gone before resize() releases them.
-  FlushAndWaitLocked();
-  h.swap_framebuffers.clear();
-  h.render_semaphores.clear();
-  if (!h.swap_chain->resize()) {
-    if (h.swap_chain->getWidth() && h.swap_chain->getHeight())
-      GPU_ERROR("Swap chain resize failed");
-    return false;
-  }
-  if (h.swap_chain->isEmpty())
-    return false;
-  return BuildSwapFramebuffersLocked(h);
 }
 
 }  // namespace redahm::gpu

@@ -1,56 +1,59 @@
 // Boot movie sequencing.
 //
-// The title drives fullscreen movies through two unrelated paths:
+// FFullScreenMovieBink (vtable off_820AB9B4) plays the startup playlist from
+// [FullScreenMovie] in KronosGame/Config/Xenon/Cooked/Coalesced.ini:
+//     StartupMovies=splash_screens
+//     StartupMovies=UnrealLogo
+//     StartupMovies=Loading        (the last entry loops, mode 130)
+// DAH_Furon_English is not part of it: it is a Bink texture movie in the front
+// end's UI scene (UI_FrontEnd_New, DAH_Furon_English_Bink), so it plays as soon
+// as the front end is up.
 //
-//   1. FFullScreenMovieBink, configured from [FullScreenMovie] in
-//      KronosGame/Config/Xenon/Cooked/Coalesced.ini:
-//          StartupMovies=splash_screens
-//          StartupMovies=UnrealLogo
-//          StartupMovies=Loading
+// How the title orders them:
+//   1. At boot sub_822BCF80 shows Splash.bmp and sets the splash end time,
+//      dbl_835EA370, to now + 5 s.
+//   2. The movie player's tick (sub_822B7308, on the rendering thread, which
+//      PreInit starts) calls sub_822B8648 until that time passes; it then sets
+//      dbl_835EA370 = -1 and plays StartupMovies[0]. The playlist index
+//      (this + 108) is -1 until then.
+//   3. At the end of FEngineLoop::Init (sub_82291C28) the game thread calls
+//      GameThreadWaitForMovie (sub_822B8318), which blocks until the playlist
+//      reaches its last entry, then GameThreadStopMovie, which ends Loading
+//      (sub_822B9C20: at the last entry it advances the playlist to its end).
+//      Only then does the front end run.
 //
-//   2. An UnrealScript native (sub_82981E10 -> sub_82ACC668) that formats
-//      "..\KronosGame\Movies\%s.bik" and plays it blocking. DAH_Furon_English
-//      arrives this way, which is why it is absent from the ini list above.
+// On the 360 engine init takes longer than the 5 s splash, so the playlist is
+// already running at step 3. Here init finishes in a few seconds: the wait saw
+// index -1 and returned at once, the stop ended nothing, the front end (and
+// DAH_Furon_English) started under the splash, and when the playlist began
+// seconds later nothing was left to end Loading, which looped forever.
 //
-// Both funnel into FFullScreenMovieBink::GameThreadPlayMovie, vtable slot +20
-// of off_820AB9B4:
-//
-//   sub_822B77E8(this, EMovieMode MovieMode, const TCHAR* MovieFilename,
-//                INT StartFrame)
-//
-// MovieFilename is UTF-16BE. This file currently only observes that choke
-// point; it does not yet reorder anything.
+// The wait below also covers the splash: while the splash timer is pending and
+// no startup movie has started, the game thread waits for the rendering thread
+// to start the playlist, then the title's own wait and stop run as on the 360.
 
 #include <rex/hook.h>
 
 #include <algorithm>
-#include <atomic>
+#include <bit>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <thread>
 
 #include "redahm_logging.h"
 
 namespace {
 
-// The startup playlist ends on the looping "Loading" movie (mode 130). It is
-// meant to be ended by the game calling the playlist advance/stop driver
-// (sub_822BA0A0) once the front end is ready; when that call is lost (the race),
-// loading.bik loops forever. We arm a watchdog when Loading starts and, if the
-// game has not ended it within this window, force the advance ourselves.
-constexpr uint64_t kLoadingStuckTimeoutMs = 1000;
-
-std::atomic<bool> g_loading_armed{false};
-std::atomic<uint32_t> g_loading_object{0};  // guest FFullScreenMovieBink playlist ptr
-std::atomic<uint64_t> g_loading_start_ms{0};
-
-bool NameContainsCI(const std::string& haystack, const char* needle) {
-  std::string h = haystack;
-  std::transform(h.begin(), h.end(), h.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return h.find(needle) != std::string::npos;
-}
+// FFullScreenMovieBink fields.
+constexpr uint32_t kPlaylistIndex = 108;  // current startup movie, -1 when none
+// Splash.bmp's end time (appSeconds), -1 once the startup playlist started.
+constexpr uint32_t kSplashEndTime = 0x835EA370;
+// How long the game thread waits for the playlist to start: the 5 s splash
+// plus the rendering thread's first ticks, with room to spare.
+constexpr auto kPlaylistStartTimeout = std::chrono::seconds(30);
+constexpr auto kPlaylistPoll = std::chrono::milliseconds(20);
 
 // Milliseconds since the first movie call, so the log shows the gaps between
 // entries rather than just absolute wall clock.
@@ -79,96 +82,64 @@ std::string ReadMovieName(uint8_t* base, uint32_t guest_addr) {
   return name;
 }
 
+int32_t PlaylistIndex(uint8_t* base, uint32_t movie) {
+  return static_cast<int32_t>(static_cast<uint32_t>(
+      *reinterpret_cast<const rex::be_u32*>(base + movie + kPlaylistIndex)));
+}
+
+bool SplashPending(uint8_t* base) {
+  const uint64_t bits = *reinterpret_cast<const rex::be<uint64_t>*>(base + kSplashEndTime);
+  return std::bit_cast<double>(bits) != -1.0;
+}
+
 }  // namespace
 
 REX_EXTERN(__imp__sub_822B77E8);
 REX_EXTERN(__imp__sub_822B8170);
 REX_EXTERN(__imp__sub_822B8318);
 REX_EXTERN(__imp__sub_822B8DC0);
-REX_EXTERN(__imp__sub_822BA0A0);
-REX_EXTERN(__imp__sub_822B9CC0);
 
-// Playlist advance/stop driver (int __fastcall(FFullScreenMovieBink* a1)).
-// Calling it ends the current movie and moves the startup playlist forward,
-// revealing the menu once the list is exhausted. Routed through our hook below,
-// so a forced call also disarms the watchdog.
-REX_IMPORT(sub_822BA0A0, ForcePlaylistAdvance, int(uint32_t));
-
-// FFullScreenMovieBink::GameThreadPlayMovie (vtable +20)
+// FFullScreenMovieBink::GameThreadPlayMovie (vtable +20):
+// (this, EMovieMode MovieMode, const TCHAR* MovieFilename, INT StartFrame).
 REX_HOOK_RAW(sub_822B77E8) {
   RDAHM_INFO("[movie] t={:>6}ms PLAY  mode={} start={} name='{}'", BootMillis(), ctx.r4.u32,
              ctx.r6.u32, ReadMovieName(base, ctx.r5.u32));
   __imp__sub_822B77E8(ctx, base);
-  RDAHM_INFO("[movie] t={:>6}ms PLAY  returned", BootMillis());
 }
 
-// vtable +24. Called as (this, ?, 1, 0, 0.0) right after the blocking wait in
-// sub_82ACC668, which is the GameThreadStopMovie shape.
+// GameThreadStopMovie (vtable +24).
 REX_HOOK_RAW(sub_822B8170) {
-  RDAHM_INFO("[movie] t={:>6}ms STOP  r4={} r5={} r6={}", BootMillis(), ctx.r4.u32, ctx.r5.u32,
-             ctx.r6.u32);
+  RDAHM_INFO("[movie] t={:>6}ms STOP  index {}", BootMillis(), PlaylistIndex(base, ctx.r3.u32));
   __imp__sub_822B8170(ctx, base);
 }
 
-// vtable +28. Called as (this) between play and stop: the blocking wait.
+// GameThreadWaitForMovie (vtable +28): waits for the startup playlist to reach
+// its last entry, or returns at once when none is playing.
 REX_HOOK_RAW(sub_822B8318) {
-  RDAHM_INFO("[movie] t={:>6}ms WAIT  enter", BootMillis());
+  const uint32_t movie = ctx.r3.u32;
+  if (PlaylistIndex(base, movie) == -1 && SplashPending(base)) {
+    // The playlist has not started yet: the splash is still up. Wait for the
+    // rendering thread's tick to start it, as the 360's longer init did.
+    RDAHM_INFO("[movie] t={:>6}ms WAIT  splash still up, waiting for the startup movies",
+               BootMillis());
+    const auto deadline = std::chrono::steady_clock::now() + kPlaylistStartTimeout;
+    while (PlaylistIndex(base, movie) == -1 && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(kPlaylistPoll);
+    }
+    if (PlaylistIndex(base, movie) == -1) {
+      RDAHM_WARN("[movie] startup movies did not start within {} s",
+                 std::chrono::duration_cast<std::chrono::seconds>(kPlaylistStartTimeout).count());
+    }
+  }
+  RDAHM_INFO("[movie] t={:>6}ms WAIT  enter, index {}", BootMillis(), PlaylistIndex(base, movie));
   __imp__sub_822B8318(ctx, base);
-  RDAHM_INFO("[movie] t={:>6}ms WAIT  leave", BootMillis());
+  RDAHM_INFO("[movie] t={:>6}ms WAIT  leave, index {}", BootMillis(), PlaylistIndex(base, movie));
 }
 
-// FFullScreenMovieBink low-level bik player (builds "Movies\<name>.bik"). BOTH
-// GameThreadPlayMovie (sub_822B77E8) and the startup playlist advancer
-// (sub_822BA2E0) funnel here, so this is the only choke point that sees the
-// startup movies (UnrealLogo, Loading, DAH_Furon_English) which never reach the
-// GameThreadPlayMovie hook. Args: a2 (r4) = mode, a3 (r5) = movie name
-// (UTF-16BE TCHAR*). Instrumentation only for now -- log entry + return so we
-// can see the real play order and whether a movie blocks/loops here.
+// The Bink player every movie goes through (builds "Movies\<name>.bik"):
+// (this, mode, name).
 REX_HOOK_RAW(sub_822B8DC0) {
-  const std::string name = ReadMovieName(base, ctx.r5.u32);
-  RDAHM_INFO("[movie] t={:>6}ms BINK  enter mode={} name='{}'", BootMillis(), ctx.r4.u32, name);
-
-  // Arm the stuck-Loading watchdog. "Loading" is the looping last startup movie;
-  // a1 (r3) is the playlist object we will force-advance if it never ends.
-  if (NameContainsCI(name, "loading")) {
-    g_loading_object.store(ctx.r3.u32, std::memory_order_relaxed);
-    g_loading_start_ms.store(BootMillis(), std::memory_order_relaxed);
-    g_loading_armed.store(true, std::memory_order_relaxed);
-  }
-
+  RDAHM_INFO("[movie] t={:>6}ms BINK  mode={} name='{}'", BootMillis(), ctx.r4.u32,
+             ReadMovieName(base, ctx.r5.u32));
   __imp__sub_822B8DC0(ctx, base);
-  RDAHM_INFO("[movie] t={:>6}ms BINK  leave name='{}'", BootMillis(), name);
-}
-
-// Playlist advance/stop driver. Any call here means the current movie is being
-// ended and the playlist moved on, so Loading is no longer stuck -- disarm the
-// watchdog. Disarming BEFORE __imp__ matters: the same call also *starts* the
-// next movie, and if that movie is Loading the hook above re-arms us.
-REX_HOOK_RAW(sub_822BA0A0) {
-  g_loading_armed.store(false, std::memory_order_relaxed);
-  __imp__sub_822BA0A0(ctx, base);
-}
-
-// Movie-thread per-frame loading tick (renders the localized "Loading..." text,
-// decodes the Bink frame, and normally calls sub_822BA0A0 itself). This is the
-// safe place to drive the watchdog: same thread and same object the game uses to
-// advance. We render the frame first, then -- if Loading has stayed up past the
-// timeout without the game advancing -- force the advance here on the movie
-// thread. (The earlier game-thread force crashed; this one matches the game.)
-REX_HOOK_RAW(sub_822B9CC0) {
-  __imp__sub_822B9CC0(ctx, base);
-
-  if (!g_loading_armed.load(std::memory_order_relaxed)) {
-    return;
-  }
-  if (BootMillis() - g_loading_start_ms.load(std::memory_order_relaxed) < kLoadingStuckTimeoutMs) {
-    return;
-  }
-  const uint32_t object = g_loading_object.load(std::memory_order_relaxed);
-  g_loading_armed.store(false, std::memory_order_relaxed);  // one-shot
-  if (object) {
-    RDAHM_WARN("[movie] loading.bik stuck > {}ms -- forcing playlist advance",
-               kLoadingStuckTimeoutMs);
-    ForcePlaylistAdvance(object);
-  }
 }

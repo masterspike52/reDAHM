@@ -21,3 +21,11 @@ inline const rex::LogCategoryId Gpu = rex::RegisterLogCategory("redahm_gpu");
     if (_gpu_warn_count.fetch_add(1, std::memory_order_relaxed) < (limit)) \
       GPU_WARN(__VA_ARGS__);                                          \
   } while (0)
+
+// Logs the first `limit` times a call site is reached, then goes quiet.
+#define GPU_INFO_LIMITED(limit, ...)                                  \
+  do {                                                                \
+    static std::atomic<unsigned> _gpu_info_count{0};                  \
+    if (_gpu_info_count.fetch_add(1, std::memory_order_relaxed) < (limit)) \
+      GPU_INFO(__VA_ARGS__);                                          \
+  } while (0)

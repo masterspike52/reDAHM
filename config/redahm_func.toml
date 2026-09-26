@@ -1,8 +1,3 @@
-setjmp_address = 0x82ff2180
-longjmp_address = 0x82ff1e60
-
-
-
 [functions]
 0x824D56F0 = {}  
 0x82BA8A08 = {}  

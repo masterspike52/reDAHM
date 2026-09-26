@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -16,11 +17,13 @@
 #include <rex/memory/utils.h>
 #include <xxhash.h>
 
+#include "core/frame_cost.h"
 #include "core/guest_memory.h"
 #include "core/log.h"
 #include "core/settings.h"
 #include "d3d/d3d_device.h"
 #include "d3d/d3d_formats.h"
+#include "render/gpu_thread.h"
 #include "render/upload_heap.h"
 
 namespace redahm::gpu {
@@ -33,7 +36,8 @@ namespace conversion = rex::graphics::texture_conversion;
 using rex::graphics::FormatInfo;
 
 // Textures the title stopped binding without destroying them (XG headers over
-// memory UE3 frees itself) are dropped after this many presented frames.
+// memory UE3 frees itself) are dropped after this many presented frames, unless
+// a resolve wrote them.
 constexpr u64 kEvictAfterFrames = 60 * 60;
 
 // Presented frames between memory log lines.
@@ -50,13 +54,61 @@ std::unordered_map<u32, std::unique_ptr<HostBuffer>> g_buffers;
 u64 g_frame = 0;
 u64 g_memory_watermark = kMemoryWatermarkStep;
 
+// Unlock hooks on any thread mark resources dirty under g_dirty_mutex and raise
+// a flag. Texture marks are moved into the GPU thread's set, guarded by the
+// renderer lock; buffer marks into the recording side's, guarded by the queue
+// lock. Each moves them only when its flag is up, so the dozens of lookups a
+// draw makes take no lock.
 std::mutex g_dirty_mutex;
-std::unordered_set<u32> g_dirty_textures;
-std::unordered_set<u32> g_dirty_buffers;
+std::unordered_set<u32> g_marked_textures;
+std::unordered_set<u32> g_marked_buffers;
+std::atomic<bool> g_textures_marked{false};
+std::atomic<bool> g_buffers_marked{false};
+std::unordered_set<u32> g_dirty_textures;  // GPU thread
 
-bool TakeDirty(std::unordered_set<u32>& set, u32 va) {
+bool TakeFlag(std::atomic<bool>& flag) {
+  // A plain load first: the exchange takes the cache line from the unlock
+  // hooks' threads, and this runs for every lookup.
+  return flag.load(std::memory_order_relaxed) && flag.exchange(false, std::memory_order_acquire);
+}
+
+bool TakeDirtyTexture(u32 va) {
+  if (TakeFlag(g_textures_marked)) {
+    std::lock_guard lock(g_dirty_mutex);
+    g_dirty_textures.insert(g_marked_textures.begin(), g_marked_textures.end());
+    g_marked_textures.clear();
+  }
+  return !g_dirty_textures.empty() && g_dirty_textures.erase(va) != 0;
+}
+
+// Recording side, under the queue lock: what the GPU thread was last given
+// for each buffer, and the buffers rewritten since.
+struct BufferRecord {
+  BufferHeader header;
+  bool index = false;
+};
+std::unordered_map<u32, BufferRecord> g_buffer_records;
+std::unordered_set<u32> g_rewritten_buffers;
+// Bumped whenever a buffer may have become rewritten or forgotten, so each
+// stream slot can remember the buffer it last checked and skip both lookups
+// while nothing has changed.
+u64 g_buffer_epoch = 1;
+
+struct SlotCheck {
+  u32 buffer_va = 0;
+  BufferHeader header;
+  bool index = false;
+  u64 epoch = 0;
+};
+SlotCheck g_slot_checks[kBufferCaptureSlots];
+
+void CollectRewrittenBuffers() {
+  if (!TakeFlag(g_buffers_marked))
+    return;
   std::lock_guard lock(g_dirty_mutex);
-  return set.erase(va) != 0;
+  g_rewritten_buffers.insert(g_marked_buffers.begin(), g_marked_buffers.end());
+  g_marked_buffers.clear();
+  ++g_buffer_epoch;
 }
 
 //------------------------------------------------------------------------------
@@ -90,6 +142,10 @@ void DropFramebuffersUsingLocked(const HostTexture* texture) {
 }
 
 void ReleaseTextureLocked(HostTexture& texture) {
+  if (texture.guest_copy) {
+    ReleaseTextureLocked(*texture.guest_copy);
+    texture.guest_copy.reset();
+  }
   DropFramebuffersUsingLocked(&texture);
   for (auto& [key, framebuffer] : texture.target_framebuffers)
     RetireLocked(std::move(framebuffer));
@@ -259,6 +315,8 @@ std::unique_ptr<HostTexture> BuildTextureLocked(u32 texture_va, const u32 words[
   const FormatInfo* info = FormatInfo::Get(static_cast<xe::TextureFormat>(fetch.format));
   t->width = (t->width + info->block_width - 1) / info->block_width * info->block_width;
   t->height = (t->height + info->block_height - 1) / info->block_height * info->block_height;
+  t->guest_width = t->width;
+  t->guest_height = t->height;
 
   plume::RenderTextureDimension dimension = plume::RenderTextureDimension::TEXTURE_2D;
   switch (fetch.dimension) {
@@ -290,9 +348,79 @@ std::unique_ptr<HostTexture> BuildTextureLocked(u32 texture_va, const u32 words[
   return t;
 }
 
+// The float twin of a 16-bit normalized format, or UNKNOWN.
+plume::RenderFormat FloatTwin(plume::RenderFormat format) {
+  using F = plume::RenderFormat;
+  switch (format) {
+    case F::R16_UNORM: return F::R16_FLOAT;
+    case F::R16G16_UNORM: return F::R16G16_FLOAT;
+    case F::R16G16B16A16_UNORM: return F::R16G16B16A16_FLOAT;
+    default: return F::UNKNOWN;
+  }
+}
+
+bool IsFloatFormat(plume::RenderFormat format) {
+  using F = plume::RenderFormat;
+  switch (format) {
+    case F::R16_FLOAT:
+    case F::R16G16_FLOAT:
+    case F::R16G16B16A16_FLOAT:
+    case F::R32_FLOAT:
+    case F::R32G32_FLOAT:
+    case F::R32G32B32A32_FLOAT:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// A resolve is about to write the texture: rebuild it at the scale of the
+// surface resolving into it, so it holds every host pixel of that surface.
+// From here on it is a render target the title only fills through resolves,
+// so guest texels are never uploaded over it.
+//
+// A 16-bit texture a float surface resolves into is held as float too. The
+// Xenos keeps 16_16 render targets as signed fixed point over -32..32 and the
+// texture fetch scales the resolved texels back (exp_adjust), so the title
+// reads what it rendered. Stored as UNORM here, values were requantised: UE3's
+// velocity buffer writes 0.5 for "no motion" and its decoder takes anything
+// below 0.5 as full speed, so 32767/65535 smeared every still pixel into
+// ghost copies with motion blur on.
+bool ScaleResolveTextureLocked(HostTexture& t, float scale, plume::RenderFormat source_format) {
+  if (t.scaled || t.surface)
+    return true;
+  t.scaled = true;
+  t.render_only = true;
+  t.needs_upload = false;
+  const plume::RenderFormat float_twin =
+      IsFloatFormat(source_format) ? FloatTwin(t.format) : plume::RenderFormat::UNKNOWN;
+  if (scale == 1.0f && float_twin == plume::RenderFormat::UNKNOWN)
+    return true;
+  const u32 old_width = t.width;
+  const u32 old_height = t.height;
+  ReleaseTextureLocked(t);
+  if (float_twin != plume::RenderFormat::UNKNOWN)
+    t.format = float_twin;
+  t.scale = scale;
+  t.width = ScaleExtent(t.guest_width, scale);
+  t.height = ScaleExtent(t.guest_height, scale);
+  t.mip_levels = std::min(t.mip_levels, Log2Floor(std::max(t.width, t.height)) + 1);
+  t.layout = plume::RenderTextureLayout::UNKNOWN;
+  // A resolve writes host channel order, so the rebuilt view skips the guest
+  // swizzle as DropGuestSwizzleLocked would.
+  t.identity_view = true;
+  if (!CreateTextureObjectsLocked(t, plume::RenderTextureDimension::TEXTURE_2D, {}, true)) {
+    GPU_ERROR("Texture {:08X}: rebuilding {}x{} at {}x{} for resolves failed", t.guest_va,
+              old_width, old_height, t.width, t.height);
+    return false;
+  }
+  return true;
+}
+
 // Guest texels to the host texture: each block is copied out of its tiled
 // position and byte swapped per the texture's endianness.
 bool UploadTextureLocked(HostTexture& t, plume::RenderCommandList* list) {
+  cost::ScopedCost timed(cost::Costs().texture_uploads);
   const xe::xe_gpu_texture_fetch_t fetch = ToFetch(t.signature);
   const auto guest_format = static_cast<xe::TextureFormat>(fetch.format);
   const FormatInfo* info = FormatInfo::Get(guest_format);
@@ -377,6 +505,7 @@ bool UploadTextureLocked(HostTexture& t, plume::RenderCommandList* list) {
       UploadAllocation staging = UploadAllocateLocked(staging_bytes, 512);
       if (!staging)
         return false;
+      timed.AddBytes(staging_bytes);
       std::memset(staging.data, 0, staging_bytes);
 
       for (u32 z = 0; z < level_d; ++z) {
@@ -494,73 +623,176 @@ void LogMemoryLocked() {
 // Public texture API
 //------------------------------------------------------------------------------
 
-HostTexture* RegisterSurfaceLocked(u32 surface_va, u32 width, u32 height, u32 d3d_format) {
+std::unique_ptr<HostTexture> CreateScratchTargetLocked(u32 width, u32 height,
+                                                       plume::RenderFormat format) {
+  auto t = std::make_unique<HostTexture>();
+  t->width = t->guest_width = width;
+  t->height = t->guest_height = height;
+  t->format = format;
+  t->render_target_capable = true;
+  t->needs_upload = false;
+  t->gpu_written = true;
+  if (!CreateTextureObjectsLocked(*t, plume::RenderTextureDimension::TEXTURE_2D, {}, true)) {
+    ReleaseTextureLocked(*t);
+    return nullptr;
+  }
+  const plume::RenderTexture* attachments[] = {t->texture.get()};
+  plume::RenderFramebufferDesc desc;
+  desc.colorAttachments = attachments;
+  desc.colorAttachmentsCount = 1;
+  auto framebuffer = Host().device->createFramebuffer(desc);
+  if (!framebuffer) {
+    ReleaseTextureLocked(*t);
+    return nullptr;
+  }
+  t->target_framebuffers[0] = std::move(framebuffer);
+  return t;
+}
+
+void ReleaseScratchTargetLocked(std::unique_ptr<HostTexture> texture) {
+  if (texture)
+    ReleaseTextureLocked(*texture);
+}
+
+namespace {
+
+// UE3's scene colour on the Xenos is two surfaces over the same EDRAM tiles
+// (FSceneRenderTargets::InitDynamicRHI, sub_8287D410; both names fall to the
+// same base in sub_8283B690): SceneColor in 7e3, where the scene renders, and
+// SceneColorRaw in 2:10:10:10, which reads and writes the same bits as plain
+// unorm. Distortion resolves the raw view into a texture, copies it back
+// through the raw view with every pixel shifted by the accumulated offsets, and
+// then resolves SceneColor for the post chain. As a host texture of its own the
+// raw view was never rendered into: the pass sampled black, wrote into a target
+// nothing read, and nothing under the pool water or behind heat haze bent. The
+// raw view renders into SceneColor's host texture instead. Float16 holds the
+// 7e3 values unchanged, so the copy round-trips like the bit copy it is on the
+// 360.
+bool IsSceneColorFormat(u32 d3d_format) {
+  return d3d::TextureFormatOf(d3d_format) == xe::TextureFormat::k_2_10_10_10_FLOAT_EDRAM;
+}
+
+bool IsRawViewFormat(u32 d3d_format) {
+  const xe::TextureFormat format = d3d::TextureFormatOf(d3d_format);
+  return format == xe::TextureFormat::k_2_10_10_10 ||
+         format == xe::TextureFormat::k_2_10_10_10_AS_16_16_16_16;
+}
+
+bool SharesEdram(const HostTexture& a, const HostTexture& b) {
+  return a.guest_width == b.guest_width && a.guest_height == b.guest_height &&
+         a.edram_base == b.edram_base;
+}
+
+void LinkRawViewLocked(HostTexture& view, HostTexture& scene) {
+  ReleaseTextureLocked(view);
+  view.layout = plume::RenderTextureLayout::UNKNOWN;
+  view.view_of = &scene;
+  GPU_INFO("Surface {:08X} (D3DFORMAT {:08X}) renders into scene colour {:08X}: same EDRAM tile {}",
+           view.guest_va, view.d3d_format, scene.guest_va, scene.edram_base);
+}
+
+// The scene surface is going: its raw views get host objects of their own.
+void UnlinkRawViewsLocked(const HostTexture& scene) {
+  for (auto& [va, t] : g_surfaces) {
+    if (t->view_of != &scene)
+      continue;
+    t->view_of = nullptr;
+    if (!CreateTextureObjectsLocked(*t, plume::RenderTextureDimension::TEXTURE_2D, {}, true))
+      GPU_ERROR("Surface {:08X}: recreating after its scene colour went failed", va);
+  }
+}
+
+}  // namespace
+
+HostTexture* RegisterSurfaceLocked(u32 surface_va, u32 width, u32 height, u32 d3d_format,
+                                   u32 edram_base) {
   if (auto it = g_surfaces.find(surface_va); it != g_surfaces.end()) {
+    UnlinkRawViewsLocked(*it->second);
     ReleaseTextureLocked(*it->second);
     g_surfaces.erase(it);
   }
   auto t = std::make_unique<HostTexture>();
   t->guest_va = surface_va;
   t->d3d_format = d3d_format;
+  t->edram_base = edram_base;
   t->surface = true;
-  t->width = width;
-  t->height = height;
+  t->scaled = true;
+  t->scale = SurfaceScale(width, height);
+  t->guest_width = width;
+  t->guest_height = height;
+  t->width = ScaleExtent(width, t->scale);
+  t->height = ScaleExtent(height, t->scale);
   t->format = d3d::ConvertSurfaceFormat(d3d_format);
   t->depth = t->format == d3d::kDepthStencilFormat;
   t->render_target_capable = true;
   t->needs_upload = false;
   if (!CreateTextureObjectsLocked(*t, plume::RenderTextureDimension::TEXTURE_2D, {}, true))
     return nullptr;
-  GPU_DEBUG("Surface {:08X}: {}x{} D3DFORMAT {:08X}", surface_va, width, height, d3d_format);
+  GPU_DEBUG("Surface {:08X}: {}x{} (host {}x{}) D3DFORMAT {:08X}", surface_va, width, height,
+            t->width, t->height, d3d_format);
   auto* raw = t.get();
   g_surfaces[surface_va] = std::move(t);
+
+  // Either half of the scene colour pair can be created first.
+  for (auto& [va, other] : g_surfaces) {
+    if (other.get() == raw || other->view_of || !SharesEdram(*raw, *other))
+      continue;
+    if (IsRawViewFormat(d3d_format) && IsSceneColorFormat(other->d3d_format)) {
+      LinkRawViewLocked(*raw, *other);
+      break;
+    }
+    if (IsSceneColorFormat(d3d_format) && IsRawViewFormat(other->d3d_format))
+      LinkRawViewLocked(*other, *raw);
+  }
   return raw;
 }
 
 HostTexture* FindSurfaceLocked(u32 surface_va) {
   auto it = g_surfaces.find(surface_va);
-  return it != g_surfaces.end() ? it->second.get() : nullptr;
+  if (it == g_surfaces.end())
+    return nullptr;
+  HostTexture* surface = it->second.get();
+  return surface->view_of ? surface->view_of : surface;
 }
 
 bool GrowSurfaceLocked(HostTexture& surface, u32 width, u32 height) {
-  if (!surface.surface || (width <= surface.width && height <= surface.height))
+  if (!surface.surface || (width <= surface.guest_width && height <= surface.guest_height))
     return false;
-  const u32 old_width = surface.width;
-  const u32 old_height = surface.height;
+  const u32 old_width = surface.guest_width;
+  const u32 old_height = surface.guest_height;
   ReleaseTextureLocked(surface);
-  surface.width = std::max(width, old_width);
-  surface.height = std::max(height, old_height);
+  surface.guest_width = std::max(width, old_width);
+  surface.guest_height = std::max(height, old_height);
+  surface.scale = SurfaceScale(surface.guest_width, surface.guest_height);
+  surface.width = ScaleExtent(surface.guest_width, surface.scale);
+  surface.height = ScaleExtent(surface.guest_height, surface.scale);
   surface.layout = plume::RenderTextureLayout::UNKNOWN;
   if (!CreateTextureObjectsLocked(surface, plume::RenderTextureDimension::TEXTURE_2D, {}, true)) {
     GPU_ERROR("Surface {:08X}: growing {}x{} to {}x{} failed", surface.guest_va, old_width,
-              old_height, surface.width, surface.height);
+              old_height, surface.guest_width, surface.guest_height);
     return false;
   }
   GPU_INFO("Surface {:08X}: {}x{} grown to the tiled {}x{}", surface.guest_va, old_width,
-           old_height, surface.width, surface.height);
+           old_height, surface.guest_width, surface.guest_height);
   return true;
 }
 
-HostTexture* GetTextureLocked(u32 texture_va) {
+HostTexture* GetTextureLocked(u32 texture_va, const u32 words[6]) {
   if (!texture_va)
     return nullptr;
   if (HostTexture* surface = FindSurfaceLocked(texture_va))
     return surface;
-  auto* header = mem::At<d3d::BaseTexture>(texture_va);
-  if (!header)
+  if (!words[0] && !words[1] && !words[2] && !words[3] && !words[4] && !words[5])
     return nullptr;
-  u32 words[6];
-  for (u32 i = 0; i < 6; ++i)
-    words[i] = header->format[i];
 
   HostTexture* t = nullptr;
   if (auto it = g_textures.find(texture_va); it != g_textures.end()) {
-    if (std::memcmp(it->second->signature, words, sizeof(words)) == 0) {
+    if (std::memcmp(it->second->signature, words, sizeof(it->second->signature)) == 0) {
       t = it->second.get();
     } else {
       ReleaseTextureLocked(*it->second);
       g_textures.erase(it);
-      TakeDirty(g_dirty_textures, texture_va);
+      TakeDirtyTexture(texture_va);
     }
   }
   if (!t) {
@@ -570,7 +802,7 @@ HostTexture* GetTextureLocked(u32 texture_va) {
     t = built.get();
     g_textures[texture_va] = std::move(built);
   }
-  if (TakeDirty(g_dirty_textures, texture_va) && !t->render_only) {
+  if (TakeDirtyTexture(texture_va) && !t->render_only) {
     t->needs_upload = true;
     t->gpu_written = false;
   }
@@ -618,8 +850,12 @@ void DropGuestSwizzleLocked(HostTexture& t) {
     SetTextureSlotLocked(t.slot, t.texture.get(), t.view.get());
 }
 
-plume::RenderFramebuffer* GetTextureTargetLocked(HostTexture& t, u32 level, u32 face) {
-  if (!t.render_target_capable || t.surface || level >= t.mip_levels || face >= t.array_size)
+plume::RenderFramebuffer* GetTextureTargetLocked(HostTexture& t, u32 level, u32 face,
+                                                 float source_scale,
+                                                 plume::RenderFormat source_format) {
+  if (!t.render_target_capable || t.surface || face >= t.array_size)
+    return nullptr;
+  if (!ScaleResolveTextureLocked(t, source_scale, source_format) || level >= t.mip_levels)
     return nullptr;
   t.gpu_written = true;
   t.needs_upload = false;
@@ -686,52 +922,6 @@ plume::RenderFramebuffer* GetSurfaceFramebufferLocked(HostTexture* const* colors
 
 namespace {
 
-HostBuffer* GetBufferLocked(u32 buffer_va, bool index) {
-  if (!buffer_va)
-    return nullptr;
-  u32 address = 0, size = 0;
-  bool index32 = false;
-  if (index) {
-    auto* header = mem::At<d3d::IndexBuffer>(buffer_va);
-    if (!header)
-      return nullptr;
-    address = header->address;
-    size = header->size;
-    index32 = (u32(header->resource.common) & d3d::kCommonIndex32) != 0;
-  } else {
-    auto* header = mem::At<d3d::VertexBuffer>(buffer_va);
-    if (!header)
-      return nullptr;
-    address = u32(header->address) & ~u32(3);
-    size = u32(header->size) & 0x03FFFFFC;
-  }
-  if (!address || !size)
-    return nullptr;
-
-  HostBuffer* b = nullptr;
-  if (auto it = g_buffers.find(buffer_va); it != g_buffers.end()) {
-    b = it->second.get();
-    if (b->index != index || b->guest_address != address || b->size != size ||
-        b->index32 != index32) {
-      RetireLocked(std::move(b->buffer));
-      b->needs_upload = true;
-    }
-  } else {
-    auto created = std::make_unique<HostBuffer>();
-    b = created.get();
-    g_buffers[buffer_va] = std::move(created);
-  }
-  b->guest_va = buffer_va;
-  b->index = index;
-  b->index32 = index32;
-  b->guest_address = address;
-  b->size = size;
-  if (TakeDirty(g_dirty_buffers, buffer_va))
-    b->needs_upload = true;
-  b->last_bound_frame = g_frame;
-  return b;
-}
-
 // Where a buffer's next copy lives. As in reblue, static geometry goes to
 // GPU_UPLOAD (device memory the CPU writes directly, so no system memory copy
 // and no PCIe read per fetch) and anything the title rewrites stays in UPLOAD,
@@ -752,20 +942,87 @@ std::unique_ptr<plume::RenderBuffer> CreateGeometryBuffer(bool index, u64 size,
 
 }  // namespace
 
-HostBuffer* GetVertexBufferLocked(u32 buffer_va) {
-  return GetBufferLocked(buffer_va, false);
+HostBuffer* GetBufferLocked(u32 buffer_va, bool index, const BufferHeader& header) {
+  const u32 address = header.address;
+  const u32 size = header.size;
+  const bool index32 = header.index32;
+  if (!buffer_va || !address || !size)
+    return nullptr;
+
+  HostBuffer* b = nullptr;
+  if (auto it = g_buffers.find(buffer_va); it != g_buffers.end()) {
+    b = it->second.get();
+    if (b->index != index || b->guest_address != address || b->size != size ||
+        b->index32 != index32) {
+      RetireLocked(std::move(b->buffer));
+      b->needs_upload = true;
+    }
+  } else {
+    static u64 next_serial = 0;
+    auto created = std::make_unique<HostBuffer>();
+    created->serial = ++next_serial;
+    b = created.get();
+    g_buffers[buffer_va] = std::move(created);
+  }
+  b->guest_va = buffer_va;
+  b->index = index;
+  b->index32 = index32;
+  b->guest_address = address;
+  b->size = size;
+  b->last_bound_frame = g_frame;
+  return b;
 }
 
-HostBuffer* GetIndexBufferLocked(u32 buffer_va) {
-  return GetBufferLocked(buffer_va, true);
+namespace {
+
+// Copies the guest's bytes into dst, swapping per index or per word.
+void CopyBufferContents(const HostBuffer& b, u8* dst, const u8* guest) {
+  if (b.index && !b.index32) {
+    rex::memory::copy_and_swap(reinterpret_cast<u16*>(dst), reinterpret_cast<const u16*>(guest),
+                               b.size / 2);
+  } else {
+    rex::memory::copy_and_swap(reinterpret_cast<u32*>(dst), reinterpret_cast<const u32*>(guest),
+                               b.size / 4);
+  }
 }
+
+void MarkUploadedLocked(HostBuffer& b, bool rewritten) {
+  if (!rewritten)
+    return;
+  b.needs_upload = false;
+  ++b.uploads;
+  b.last_upload_frame = g_frame + 1;
+}
+
+}  // namespace
 
 bool PrepareBufferLocked(HostBuffer& b) {
-  if (!b.needs_upload && b.buffer)
+  const u64 generation = UploadGenerationLocked();
+  if (!b.needs_upload && (b.buffer || (b.ring && b.ring_generation == generation)))
     return true;
-  const u8* guest = mem::AtGpuAddress(b.guest_address);
+  cost::ScopedCost timed(cost::Costs().buffer_uploads);
+  timed.AddBytes(b.size);
+  const u8* guest = b.captured ? b.captured : mem::AtGpuAddress(b.guest_address);
   if (!guest)
     return false;
+  const bool rewritten = b.needs_upload;
+  // Uploaded this frame or the last: the title rewrites it every frame, so it
+  // goes to the frame's upload memory. A ring copy from an earlier frame that
+  // is still bound is renewed the same way while the buffer stays that busy.
+  const bool dynamic = b.last_upload_frame != 0 && g_frame + 1 - b.last_upload_frame <= 1;
+  if (dynamic) {
+    UploadAllocation copy = UploadAllocateLocked(b.size, 256);
+    if (copy) {
+      CopyBufferContents(b, copy.data, guest);
+      RetireLocked(std::move(b.buffer));
+      b.ring = copy.buffer;
+      b.ring_offset = copy.offset;
+      b.ring_generation = generation;
+      MarkUploadedLocked(b, rewritten);
+      return true;
+    }
+  }
+  b.ring = nullptr;
   // A fresh buffer per upload: the previous one may still be read by a frame
   // in flight.
   RetireLocked(std::move(b.buffer));
@@ -784,16 +1041,9 @@ bool PrepareBufferLocked(HostBuffer& b) {
     return false;
   }
   // Vertex data swaps per word; indices per index.
-  if (b.index && !b.index32) {
-    rex::memory::copy_and_swap(reinterpret_cast<u16*>(mapped), reinterpret_cast<const u16*>(guest),
-                               b.size / 2);
-  } else {
-    rex::memory::copy_and_swap(reinterpret_cast<u32*>(mapped), reinterpret_cast<const u32*>(guest),
-                               b.size / 4);
-  }
+  CopyBufferContents(b, mapped, guest);
   b.buffer->unmap();
-  b.needs_upload = false;
-  ++b.uploads;
+  MarkUploadedLocked(b, rewritten);
   return true;
 }
 
@@ -805,15 +1055,120 @@ void MarkTextureDirty(u32 texture_va) {
   if (!texture_va)
     return;
   std::lock_guard lock(g_dirty_mutex);
-  g_dirty_textures.insert(texture_va);
+  g_marked_textures.insert(texture_va);
+  g_textures_marked.store(true, std::memory_order_release);
 }
 
 void MarkBufferDirty(u32 buffer_va) {
   if (!buffer_va)
     return;
   std::lock_guard lock(g_dirty_mutex);
-  g_dirty_buffers.insert(buffer_va);
+  g_marked_buffers.insert(buffer_va);
+  g_buffers_marked.store(true, std::memory_order_release);
 }
+
+//------------------------------------------------------------------------------
+// Recording side
+//------------------------------------------------------------------------------
+
+void ReadTextureWords(u32 texture_va, u32 out[6]) {
+  const auto* header = mem::At<d3d::BaseTexture>(texture_va);
+  for (u32 i = 0; i < 6; ++i)
+    out[i] = header ? u32(header->format[i]) : 0;
+}
+
+BufferHeader ReadBufferHeader(u32 buffer_va, bool index) {
+  BufferHeader header;
+  if (index) {
+    if (const auto* buffer = mem::At<d3d::IndexBuffer>(buffer_va)) {
+      header.address = buffer->address;
+      header.size = buffer->size;
+      header.index32 = (u32(buffer->resource.common) & d3d::kCommonIndex32) != 0;
+    }
+  } else if (const auto* buffer = mem::At<d3d::VertexBuffer>(buffer_va)) {
+    header.address = u32(buffer->address) & ~u32(3);
+    header.size = u32(buffer->size) & 0x03FFFFFC;
+  }
+  return header;
+}
+
+bool BufferCaptureNeeded(u32 buffer_va, bool index, const BufferHeader& header, u32 slot) {
+  CollectRewrittenBuffers();
+  SlotCheck& check = g_slot_checks[slot];
+  if (check.epoch == g_buffer_epoch && check.buffer_va == buffer_va && check.index == index &&
+      check.header.address == header.address && check.header.size == header.size &&
+      check.header.index32 == header.index32) {
+    return false;
+  }
+
+  const bool rewritten = !g_rewritten_buffers.empty() && g_rewritten_buffers.erase(buffer_va) != 0;
+  const auto [it, inserted] = g_buffer_records.try_emplace(buffer_va);
+  BufferRecord& record = it->second;
+  const bool moved = inserted || record.index != index ||
+                     record.header.address != header.address ||
+                     record.header.size != header.size ||
+                     record.header.index32 != header.index32;
+  record.header = header;
+  record.index = index;
+  // Another slot may remember this buffer at its old header.
+  if (moved)
+    ++g_buffer_epoch;
+  check = {buffer_va, header, index, g_buffer_epoch};
+  return rewritten || moved;
+}
+
+namespace {
+
+struct RegisterSurfacePacket {
+  u32 surface_va;
+  u32 width;
+  u32 height;
+  u32 d3d_format;
+  u32 edram_base;
+};
+
+void RunRegisterSurface(const u8* payload, u32 /*size*/) {
+  RegisterSurfacePacket packet;
+  std::memcpy(&packet, payload, sizeof(packet));
+  RegisterSurfaceLocked(packet.surface_va, packet.width, packet.height, packet.d3d_format,
+                        packet.edram_base);
+}
+
+void RunDestroyResource(const u8* payload, u32 /*size*/) {
+  u32 resource_va;
+  std::memcpy(&resource_va, payload, sizeof(resource_va));
+  DestroyResourceLocked(resource_va);
+}
+
+}  // namespace
+
+void QueueRegisterSurface(u32 surface_va, u32 width, u32 height, u32 d3d_format) {
+  // Surface::info holds the first EDRAM tile in its low 12 bits.
+  const auto* surface = mem::At<d3d::Surface>(surface_va);
+  const RegisterSurfacePacket packet{surface_va, width, height, d3d_format,
+                                     surface ? u32(surface->info) & 0xFFF : ~0u};
+  gpu_thread::Queue(RunRegisterSurface, packet);
+}
+
+void QueueDestroyResource(u32 resource_va) {
+  gpu_thread::Recorder recorder;
+  // The next resource at this address starts over: its first draw carries its
+  // contents.
+  g_buffer_records.erase(resource_va);
+  g_rewritten_buffers.erase(resource_va);
+  ++g_buffer_epoch;
+  {
+    std::lock_guard lock(g_dirty_mutex);
+    g_marked_buffers.erase(resource_va);
+  }
+  std::memcpy(recorder.Reserve(RunDestroyResource, sizeof(resource_va)), &resource_va,
+              sizeof(resource_va));
+  recorder.Commit(sizeof(resource_va));
+}
+
+//------------------------------------------------------------------------------
+// GPU thread lifetime
+//------------------------------------------------------------------------------
 
 void DestroyResourceLocked(u32 resource_va) {
   if (auto it = g_textures.find(resource_va); it != g_textures.end()) {
@@ -821,6 +1176,7 @@ void DestroyResourceLocked(u32 resource_va) {
     g_textures.erase(it);
   }
   if (auto it = g_surfaces.find(resource_va); it != g_surfaces.end()) {
+    UnlinkRawViewsLocked(*it->second);
     ReleaseTextureLocked(*it->second);
     g_surfaces.erase(it);
   }
@@ -828,9 +1184,9 @@ void DestroyResourceLocked(u32 resource_va) {
     RetireLocked(std::move(it->second->buffer));
     g_buffers.erase(it);
   }
-  std::lock_guard lock(g_dirty_mutex);
   g_dirty_textures.erase(resource_va);
-  g_dirty_buffers.erase(resource_va);
+  std::lock_guard lock(g_dirty_mutex);
+  g_marked_textures.erase(resource_va);
 }
 
 void TickResourcesLocked(u64 frame) {
@@ -840,7 +1196,13 @@ void TickResourcesLocked(u64 frame) {
   if (frame % 120 != 0)
     return;
   for (auto it = g_textures.begin(); it != g_textures.end();) {
-    if (frame - it->second->last_bound_frame > kEvictAfterFrames) {
+    // A resolved texture's texels exist only here: resolves never reach guest
+    // memory, so rebuilding it would upload whatever those bytes held before.
+    // PotF's ground damage map (a 512x512 render target, sampled only where
+    // damageable ground is drawn) came back as noise after a minute out of
+    // view, cracking the ground everywhere. They go when the title destroys
+    // them.
+    if (!it->second->gpu_written && frame - it->second->last_bound_frame > kEvictAfterFrames) {
       ReleaseTextureLocked(*it->second);
       it = g_textures.erase(it);
     } else {

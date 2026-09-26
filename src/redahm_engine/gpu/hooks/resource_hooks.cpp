@@ -2,7 +2,7 @@
 //
 // The title's D3D keeps creating the resource headers and computing lock
 // addresses. The renderer adds host twins after creation, re-uploads after
-// unlocks, and releases them on destruction. Relocations (UE3's
+// unlocks, and owns destruction outright. Relocations (UE3's
 // XGOffsetResourceAddress) need no hook: the host twins compare the header
 // words they were built from on every bind.
 
@@ -20,6 +20,15 @@
 #include "resources/resources.h"
 #include "shaders/guest_shaders.h"
 #include "shaders/vertex_declaration.h"
+
+// The allocators D3DResource_Destroy hands memory back to. sub_822996C0 is
+// XMemFree(pAddress, dwAllocAttributes): a negative attribute word frees
+// physical memory, a positive one frees from the process heap. sub_82E92C58 is
+// the EDRAM tile allocator's free (first tile, tile count) and sub_82E7E420 the
+// teardown the ninth resource type carries of its own.
+REX_IMPORT(__imp__sub_822996C0, XMemFree, u32(u32, u32));
+REX_IMPORT(__imp__sub_82E92C58, FreeEdramTiles, void(u32, u32));
+REX_IMPORT(__imp__sub_82E7E420, DestroyResourceTail, void(u32));
 
 namespace {
 
@@ -110,8 +119,109 @@ u32 D3DVertexShader_Bind_hook(u32 shader, u32 /*flags*/, u32 declaration, u32 /*
   return 0;
 }
 
+// D3DResource_Destroy (0x82E76648) reimplemented. The original reads the type
+// out of Common, submits the ring buffer packet that retires that kind of
+// resource on the GPU, frees whatever its creation allocated, and frees the
+// header last. Nothing produces packets here, so the packets go; the frees stay
+// and the host twin is released alongside them, which is the whole point of
+// owning the function: a resource is gone from the renderer at the same moment
+// the title hands its memory back, so the next resource to land on that address
+// can never match a stale host copy.
+
+constexpr u32 kPhysicalAttributes = 0xB1800000;
+constexpr u32 kHeapAttributes = 0x24800000;
+
+// D3DResource::Common: the resource owns the memory its header points at.
+constexpr u32 kCommonOwnsMemory = 0x80000000;
+// Texture data sits on 4KB pages and the fetch words carry flags below that.
+constexpr u32 kPageMask = ~u32(0xFFF);
+// D3DSurface: the EDRAM tile is 5120 bytes, the tile index lives in the low 12
+// bits of Info, and HiControl's top bit marks the surface holding hierarchical
+// Z. D3D keeps that surface in a global it has to forget when it goes.
+constexpr u32 kEdramTileSize = 0x1400;
+constexpr u32 kEdramTileMask = 0xFFF;
+constexpr u32 kSurfaceOwnsHiZ = 0x80000000;
+constexpr u32 kHiZOwner = 0x836DEDDC;
+// Where the shader objects keep the physical address of their microcode. The
+// header copy the renderer reads at registration sits further along.
+constexpr u32 kVertexShaderMicrocode = 0x20;
+constexpr u32 kPixelShaderMicrocode = 0x18;
+
+void FreePhysical(u32 address) {
+  if (address)
+    XMemFree(address, kPhysicalAttributes);
+}
+
+// The two types below D3D's own resources use and PotF never creates. They free
+// the one word their create allocated, and the ninth runs its own teardown.
+constexpr u32 kCommonTypeConstantBuffer = 8;
+constexpr u32 kCommonTypeCommandBuffer = 9;
+
+void ReleaseResourceMemory(u32 resource, u32 common, u32 type) {
+  switch (type) {
+    case d3d::kCommonTypeVertexBuffer:
+      // The address word carries the fetch type in its low two bits.
+      FreePhysical(u32(mem::At<d3d::VertexBuffer>(resource)->address) & ~u32(3));
+      return;
+    case d3d::kCommonTypeIndexBuffer:
+      FreePhysical(mem::At<d3d::IndexBuffer>(resource)->address);
+      return;
+    case d3d::kCommonTypeTexture: {
+      auto* texture = mem::At<d3d::BaseTexture>(resource);
+      FreePhysical(u32(texture->format[1]) & kPageMask);
+      FreePhysical(u32(texture->format[5]) & kPageMask);
+      return;
+    }
+    case d3d::kCommonTypeSurface: {
+      // A surface from GetSurfaceLevel is a view of its texture and allocated
+      // nothing of its own.
+      if (common & d3d::kCommonTextureLevelSurface)
+        return;
+      auto* surface = mem::At<d3d::Surface>(resource);
+      if (common & kCommonOwnsMemory) {
+        FreeEdramTiles(u32(surface->info) & kEdramTileMask,
+                       u32(surface->size) / kEdramTileSize);
+      }
+      if (u32(surface->hi_control) & kSurfaceOwnsHiZ)
+        mem::Store<u32>(kHiZOwner, 0);
+      return;
+    }
+    case d3d::kCommonTypeVertexShader:
+      FreePhysical(mem::Load<u32>(resource + kVertexShaderMicrocode));
+      return;
+    case d3d::kCommonTypePixelShader:
+    case kCommonTypeConstantBuffer:
+      FreePhysical(mem::Load<u32>(resource + kPixelShaderMicrocode));
+      return;
+    case kCommonTypeCommandBuffer:
+      DestroyResourceTail(resource);
+      return;
+    default:
+      return;
+  }
+}
+
+void D3DResource_Destroy_hook(u32 resource) {
+  auto* header = mem::At<d3d::Resource>(resource);
+  if (!header)
+    return;
+  const u32 common = header->common;
+  const u32 type = common & d3d::kCommonTypeMask;
+
+  // The GPU thread drops the host twin after the draws queued before this,
+  // which captured whatever they read from the memory freed below.
+  if (type == d3d::kCommonTypeVertexShader || type == d3d::kCommonTypePixelShader)
+    UnregisterGuestShader(resource);
+  else
+    QueueDestroyResource(resource);
+
+  ReleaseResourceMemory(resource, common, type);
+  XMemFree(resource, kHeapAttributes);
+}
+
 }  // namespace
 
+REX_HOOK(D3DResource_Destroy, D3DResource_Destroy_hook);
 REX_HOOK(D3DVertexBuffer_Unlock, D3DVertexBuffer_Unlock_hook);
 REX_HOOK(D3DIndexBuffer_Unlock, D3DIndexBuffer_Unlock_hook);
 REX_HOOK(D3DTexture_UnlockRect, D3DTexture_UnlockRect_hook);
@@ -126,9 +236,11 @@ REX_HOOK(sub_82E760F8, D3DVertexShader_Bind_hook);
 
 // The hooks below stay raw.
 //
-// Creation and destruction run their original on the inherited context, since
-// the title's D3D builds and frees the headers: a typed REX_IMPORT re-roots the
-// guest stack at ThreadState's r1 and overwrites the frames live underneath it.
+// Creation runs its original on the inherited context, since the title's D3D
+// builds the headers: a typed REX_IMPORT re-roots the guest stack at
+// ThreadState's r1 and overwrites the frames live underneath it. Destruction
+// does not have to, because the hook above replaces the whole function and
+// never returns into it.
 
 // (Width, Height, Format, MultiSample, pParameters)
 REX_HOOK_RAW(D3DDevice_CreateSurface) {
@@ -136,10 +248,8 @@ REX_HOOK_RAW(D3DDevice_CreateSurface) {
   const u32 height = ctx.r4.u32;
   const u32 format = ctx.r5.u32;
   __imp__D3DDevice_CreateSurface(ctx, base);
-  if (const u32 surface = ctx.r3.u32) {
-    std::lock_guard lock(Host().mutex);
-    RegisterSurfaceLocked(surface, width, height, format);
-  }
+  if (const u32 surface = ctx.r3.u32)
+    QueueRegisterSurface(surface, width, height, format);
 }
 
 // Shaders: D3DDevice_Create*Shader and UE3's own path both copy the container
@@ -178,21 +288,6 @@ REX_HOOK_RAW(D3DDevice_CreateVertexDeclaration) {
   __imp__D3DDevice_CreateVertexDeclaration(ctx, base);
   if (const u32 declaration = ctx.r3.u32)
     RegisterVertexDeclaration(declaration, mem::At<d3d::VertexElement>(elements));
-}
-
-// (pResource)
-REX_HOOK_RAW(D3DResource_Destroy) {
-  const u32 resource = ctx.r3.u32;
-  if (auto* header = mem::At<d3d::Resource>(resource)) {
-    const u32 type = u32(header->common) & d3d::kCommonTypeMask;
-    if (type == d3d::kCommonTypeVertexShader || type == d3d::kCommonTypePixelShader) {
-      UnregisterGuestShader(resource);
-    } else {
-      std::lock_guard lock(Host().mutex);
-      DestroyResourceLocked(resource);
-    }
-  }
-  __imp__D3DResource_Destroy(ctx, base);
 }
 
 // Shared by every Lock: tracks the locked byte range and the lock count, and

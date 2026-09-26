@@ -30,6 +30,15 @@ struct SlotChunks {
 };
 
 SlotChunks g_slots[kFrameCount];
+// Each slot's generation, unique across slots and resets.
+u64 g_generations[kFrameCount] = {};
+u64 g_next_generation = 0;
+
+u64& SlotGeneration(u32 slot) {
+  if (!g_generations[slot])
+    g_generations[slot] = ++g_next_generation;
+  return g_generations[slot];
+}
 
 bool CreateChunk(Chunk& chunk, u32 size) {
   const plume::RenderBufferFlags flags =
@@ -107,6 +116,11 @@ void ResetUploadSlotLocked(u32 slot) {
   for (auto& chunk : chunks.chunks)
     chunk.used = 0;
   chunks.current = 0;
+  SlotGeneration(slot) = ++g_next_generation;
+}
+
+u64 UploadGenerationLocked() {
+  return SlotGeneration(CurrentFrameSlot());
 }
 
 u64 UploadHeapBytesLocked() {

@@ -4,18 +4,24 @@
 // command list ring, the bindless heaps shared by every pipeline, and the
 // fence-deferred retirement of GPU objects.
 //
-// Everything below Host() is guarded by Host().mutex. Functions suffixed with
-// Locked expect the caller to hold it.
+// Everything below Host() is guarded by Host().mutex, except what the submit
+// thread owns (the swap chain, the real command lists; see FrameSlot).
+// Functions suffixed with Locked expect the caller to hold it.
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <plume_render_interface.h>
 #include <rex/types.h>
+
+#include "render/deferred_list.h"
 
 namespace rex::ui {
 class Window;
@@ -23,8 +29,9 @@ class Window;
 
 namespace redahm::gpu {
 
-// Frames in flight: the CPU records frame N+1 while the GPU runs N.
-inline constexpr u32 kFrameCount = 2;
+// Frames in flight: the GPU thread (render/gpu_thread.h) records frame N+2
+// while the submit thread replays and submits N+1 and the GPU runs N.
+inline constexpr u32 kFrameCount = 3;
 
 inline constexpr u32 kTextureDescriptorCount = 16384;
 inline constexpr u32 kSamplerDescriptorCount = 1024;
@@ -70,10 +77,24 @@ struct RetiredObjects {
   std::vector<std::pair<u32, u32>> texture_slots;
 };
 
+// A frame's recording, the real command list it is replayed onto, and the
+// objects it retired.
+//
+// The title's render thread records into `recording` (and, for a presenting
+// frame, the swap chain pass into `present_recording`), then queues the slot.
+// The submit thread replays both onto `list`, executes it and presents, then
+// marks it submitted. Before the render thread records into the slot again it
+// waits for the submit thread to be done with it and then on its fence; only
+// the render thread waits on the slot fences.
 struct FrameSlot {
   std::unique_ptr<plume::RenderCommandList> list;
   std::unique_ptr<plume::RenderCommandFence> fence;
   std::unique_ptr<plume::RenderCommandSemaphore> acquire_semaphore;
+  DeferredCommandList recording;
+  DeferredCommandList present_recording;
+  bool present = false;
+  // Guarded by HostState::submit_mutex.
+  bool queued = false;
   bool submitted = false;
   RetiredObjects retired;
 };
@@ -97,9 +118,32 @@ struct HostState {
   // state compares against this to know when to rebind everything.
   u64 list_generation = 0;
 
+  // Owned by the submit thread once it runs.
   std::unique_ptr<plume::RenderSwapChain> swap_chain;
   std::vector<std::unique_ptr<plume::RenderFramebuffer>> swap_framebuffers;
   std::vector<std::unique_ptr<plume::RenderCommandSemaphore>> render_semaphores;
+  // What the present pass is recorded against; the submit thread updates it
+  // when it resizes the swap chain.
+  std::atomic<u32> swap_width{0};
+  std::atomic<u32> swap_height{0};
+
+  // The submit thread and its queue of recorded slots.
+  std::thread submit_thread;
+  std::mutex submit_mutex;
+  std::condition_variable submit_wake;  // work queued, or stop
+  std::condition_variable submit_done;  // a slot finished submitting
+  std::deque<u32> submit_queue;
+  bool submit_stop = false;
+  // Lets the submit thread wait for the GPU to go idle (swap chain resize)
+  // without touching the slot fences, which the render thread waits on.
+  std::unique_ptr<plume::RenderCommandList> idle_list;
+  std::unique_ptr<plume::RenderCommandFence> idle_fence;
+  // Submit thread timings, taken by the periodic frame cost log.
+  std::atomic<u64> submit_ns{0};
+  std::atomic<u64> submit_max_ns{0};
+  std::atomic<u64> present_ns{0};
+  std::atomic<u64> present_max_ns{0};
+  std::atomic<u32> submit_count{0};
 
   std::unique_ptr<plume::RenderPipelineLayout> pipeline_layout;
   std::unique_ptr<plume::RenderDescriptorSet> texture_set;
@@ -133,16 +177,22 @@ void ShutdownHost();
 
 bool IsHostReady();
 
-// Opens the recording command list if needed. nullptr when the host is not up
+// Opens the frame's recording list if needed. nullptr when the host is not up
 // or is shutting down.
 plume::RenderCommandList* OpenCommandListLocked();
 
-// Submits the open list with the given semaphores, advances the ring and frees
-// what the reused slot retired. Unlocks nothing; the drain runs under the lock.
-void SubmitFrameLocked(plume::RenderCommandSemaphore** wait, u32 wait_count,
-                       plume::RenderCommandSemaphore** signal, u32 signal_count);
+// Opens the frame's swap chain pass, recorded against
+// DeferredCommandList::BackBufferFramebuffer()/BackBufferTexture() at
+// swap_width x swap_height. It runs after the frame's recording, and only if
+// the submit thread acquires an image. Needs the recording list open.
+plume::RenderCommandList* OpenPresentListLocked();
 
-// Submits the open list (if any) and waits for every in-flight frame.
+// Queues the open recording for the submit thread (presenting if asked),
+// advances the ring and, once the reused slot's work is done, frees what it
+// retired. Waits only when every slot is still in flight.
+void SubmitFrameLocked(bool present);
+
+// Queues the open recording (if any) and waits for every in-flight frame.
 void FlushAndWaitLocked();
 
 u32 CurrentFrameSlot();
@@ -172,10 +222,7 @@ std::unique_ptr<plume::RenderTexture> CreateTexture(const plume::RenderTextureDe
 std::unique_ptr<plume::RenderPipeline> CreateGraphicsPipeline(
     const plume::RenderGraphicsPipelineDesc& desc, const char* tag);
 
+// Asks the submit thread to rebuild the swap chain before its next present.
 void RequestResize();
-
-// Waits out the in-flight frames and rebuilds the swap chain and its
-// framebuffers. False when the window has no area (minimized).
-bool ResizeSwapChainLocked();
 
 }  // namespace redahm::gpu

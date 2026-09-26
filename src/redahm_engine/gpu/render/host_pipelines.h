@@ -21,6 +21,9 @@ plume::RenderPipeline* ImGuiPipelineLocked();
 plume::RenderPipeline* ResolveColorPipelineLocked(plume::RenderFormat destination_format);
 plume::RenderPipeline* ResolveDepthPipelineLocked(plume::RenderFormat destination_format);
 
+// Box-filters a scaled texture back to its guest size (guest_size_ps).
+plume::RenderPipeline* GuestSizePipelineLocked(plume::RenderFormat destination_format);
+
 // BinkDrawFrame's YUV to RGB pass, alpha blended into a color target.
 plume::RenderPipeline* BinkPipelineLocked(plume::RenderFormat target_format);
 

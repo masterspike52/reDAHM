@@ -32,6 +32,20 @@ HostFormat ConvertTextureFormat(u32 d3d_format);
 // The format a render target or depth surface of this D3DFORMAT renders into.
 plume::RenderFormat ConvertSurfaceFormat(u32 d3d_format);
 
+// No clamp: the host format holds everything the guest format could.
+inline constexpr float kUnclampedSurface = 3.402823466e+38f;
+
+// What a channel of an EDRAM surface saturates at. The EDRAM colour formats
+// hold far less than the host float formats they render into, and the hardware
+// applies the clamp to every blend result, so a surface the title blends into
+// over and over settles at its ceiling instead of climbing.
+struct SurfaceCeiling {
+  float rgb = kUnclampedSurface;
+  float alpha = kUnclampedSurface;
+};
+
+SurfaceCeiling SurfaceCeilingOf(u32 d3d_format);
+
 inline constexpr plume::RenderFormat kDepthStencilFormat = plume::RenderFormat::D32_FLOAT_S8_UINT;
 
 bool IsRenderTargetCapable(plume::RenderFormat format);

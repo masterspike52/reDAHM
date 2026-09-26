@@ -40,18 +40,27 @@ HostFormat ConvertTextureFormat(u32 d3d_format) {
       return {F::R16G16_UNORM};
     case xe::TextureFormat::k_16_16_16_16:
       return {F::R16G16B16A16_UNORM};
-    // The _EXPAND formats hold 16-bit floats. PotF's variance shadow maps are
-    // rendered as k_16_16_FLOAT and resolved into k_16_16_EXPAND textures; as
-    // UNORM the resolve clamped the moments to [0, 1] and requantised them.
     case xe::TextureFormat::k_16_FLOAT:
-    case xe::TextureFormat::k_16_EXPAND:
       return {F::R16_FLOAT};
     case xe::TextureFormat::k_16_16_FLOAT:
-    case xe::TextureFormat::k_16_16_EXPAND:
       return {F::R16G16_FLOAT};
     case xe::TextureFormat::k_16_16_16_16_FLOAT:
-    case xe::TextureFormat::k_16_16_16_16_EXPAND:
       return {F::R16G16B16A16_FLOAT};
+    // The _EXPAND formats store 16-bit floats that the Xenos sampler expands to
+    // 32 bits before it filters. PotF resolves its variance shadow moments
+    // (depth, depth squared) into k_16_16_EXPAND and takes the variance as
+    // E[d^2] - E[d]^2 of a bilinear fetch, then raises the Chebyshev bound to
+    // the 20th power. Filtered at 16-bit precision the subtraction cancels to
+    // noise that changes with every sub-texel shift, so building shadows
+    // flickered as the camera moved. Held as 32-bit floats they filter at full
+    // precision. Only resolves write them, since a 16-bit guest texel has no
+    // 32-bit host twin.
+    case xe::TextureFormat::k_16_EXPAND:
+      return {F::R32_FLOAT, false, true};
+    case xe::TextureFormat::k_16_16_EXPAND:
+      return {F::R32G32_FLOAT, false, true};
+    case xe::TextureFormat::k_16_16_16_16_EXPAND:
+      return {F::R32G32B32A32_FLOAT, false, true};
     case xe::TextureFormat::k_32_FLOAT:
       return {F::R32_FLOAT};
     case xe::TextureFormat::k_32_32_FLOAT:
@@ -87,6 +96,26 @@ plume::RenderFormat ConvertSurfaceFormat(u32 d3d_format) {
       const HostFormat host = ConvertTextureFormat(d3d_format);
       return IsRenderTargetCapable(host.format) ? host.format : F::R8G8B8A8_UNORM;
     }
+  }
+}
+
+SurfaceCeiling SurfaceCeilingOf(u32 d3d_format) {
+  switch (TextureFormatOf(d3d_format)) {
+    // 7e3: seven mantissa bits under a three-bit exponent, so the largest
+    // colour is (1 + 127/128) * 2^4, and alpha is two-bit unorm. UE3 renders
+    // its scene colour here, multiplied by 16 in the shaders and resolved with
+    // exponent bias -4, which leaves the title an HDR range of just under 2.
+    // PotF's death ray piles additive particles well past that; held in float16
+    // they reach the hundreds, and the bloom the resolved colour feeds turns
+    // the muzzle into a disc the size of the saucer.
+    case xe::TextureFormat::k_2_10_10_10_FLOAT_EDRAM:
+      return {31.875f, 1.0f};
+    // Fixed point -32..32, not the -1..1 the name suggests.
+    case xe::TextureFormat::k_16_16_EDRAM:
+    case xe::TextureFormat::k_16_16_16_16_EDRAM:
+      return {32.0f, 32.0f};
+    default:
+      return {};
   }
 }
 

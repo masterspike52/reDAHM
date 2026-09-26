@@ -1,0 +1,12 @@
+# Build output
+out/
+
+# rexglue codegen output (run `rexglue codegen` to produce it)
+generated/
+
+# Game data: extract your own copy of the game into assets/
+assets/*
+!assets/.gitignore
+
+# Python caches
+__pycache__/

@@ -11,6 +11,8 @@
 #include "d3d/d3d_device.h"
 #include "draw/draw.h"
 #include "present/present.h"
+#include "render/host.h"
+#include "render/occlusion.h"
 
 // Frame counter for the FPS overlay (redahm_engine/hooks.cpp).
 void Hook_VdSwap_FrameTick();
@@ -22,9 +24,12 @@ using namespace redahm::gpu;
 constexpr u32 kErrorOutOfMemory = 0x8007000E;
 // D3DFMT_INDEX32 differs from D3DFMT_INDEX16 in this bit.
 constexpr u32 kIndexFormat32Bit = 4;
-// D3DQuery_GetData's visible pixel count for occlusion queries.
-constexpr u32 kQueryVisiblePixels = 0x10000;
-
+// An occlusion test box: its corners and its 12 triangles' indices.
+constexpr u32 kBoxCorners = 8;
+constexpr u32 kBoxIndices = 36;
+// The width and height of the viewport EndTiling restores, clamped to the
+// target at the draw.
+constexpr u32 kTilingEndViewportSize = 0xFFFF;
 // The Xenon ABI reserves a GPR slot for every float argument (it arrives in f1
 // but still consumes the next rN), while typed marshalling numbers integer
 // arguments without skipping it. The z_gpr_slot placeholders below absorb that
@@ -155,13 +160,51 @@ void D3DDevice_DrawVerticesUP_hook(u32 device, u32 primitive, u32 vertex_count, 
   DrawVerticesUP(device, primitive, vertex_count, vertices, stride);
 }
 
+// PotF's occlusion batcher (sub_8239F780) draws the bounding boxes of a batch
+// of primitives under one query, 8 corners and 12 triangles each, box b's
+// indices addressing corners 8b..8b+7. Each box is drawn under a host query of
+// its own (render/occlusion.h). A draw under a query that is not laid out
+// like that gets one host query for the whole draw. The boxes join the title's
+// query here; their host queries begin and end on the GPU thread around their
+// draws.
+void DrawOcclusionTest(u32 device, u32 primitive, u32 vertex_count, u32 index_count, u32 indices,
+                       bool indices_32bit, u32 vertices, u32 stride) {
+  const u32 index_size = indices_32bit ? 4 : 2;
+  const u32 boxes = vertex_count / kBoxCorners;
+  bool per_box = boxes && vertex_count == boxes * kBoxCorners && index_count == boxes * kBoxIndices;
+  for (u32 i = 0; per_box && i < index_count; ++i) {
+    const u32 index = indices_32bit ? mem::Load<u32>(indices + i * 4)
+                                    : u32(mem::Load<u16>(indices + i * 2));
+    per_box = index / kBoxCorners == i / kBoxIndices;
+  }
+  if (!per_box) {
+    DrawIndexedVerticesUP(device, primitive, 0, vertex_count, index_count, indices, indices_32bit,
+                          vertices, stride, occlusion::AddBox(vertices, vertex_count * stride));
+    return;
+  }
+  for (u32 box = 0; box < boxes; ++box) {
+    const u32 box_vertices = vertices + box * kBoxCorners * stride;
+    // The box's corners alone, with the base vertex taking its indices back
+    // to them.
+    DrawIndexedVerticesUP(device, primitive, -i32(box * kBoxCorners), kBoxCorners, kBoxIndices,
+                          indices + box * kBoxIndices * index_size, indices_32bit, box_vertices,
+                          stride, occlusion::AddBox(box_vertices, kBoxCorners * stride));
+  }
+}
+
 // (pDevice, PrimitiveType, MinVertexIndex, NumVertices, IndexCount, pIndexData,
 //  IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride)
 void D3DDevice_DrawIndexedVerticesUP_hook(u32 device, u32 primitive, u32 min_index,
                                           u32 num_vertices, u32 index_count, u32 indices,
                                           u32 index_format, u32 vertices, u32 stride) {
+  const bool indices_32bit = (index_format & kIndexFormat32Bit) != 0;
+  if (occlusion::QueryOpen()) {
+    DrawOcclusionTest(device, primitive, min_index + num_vertices, index_count, indices,
+                      indices_32bit, vertices, stride);
+    return;
+  }
   DrawIndexedVerticesUP(device, primitive, 0, min_index + num_vertices, index_count, indices,
-                        (index_format & kIndexFormat32Bit) != 0, vertices, stride);
+                        indices_32bit, vertices, stride);
 }
 
 //------------------------------------------------------------------------------
@@ -217,20 +260,26 @@ u32 D3DDevice_EndTiling_hook(u32 device, u32 resolve_flags, u32 resolve_rects, u
     args.clear_stencil = clear_stencil;
     Resolve(device, args);
   }
+  // The title's EndTiling finishes with D3DDevice_SetViewport(&{0, 0, 0xFFFF,
+  // 0xFFFF, 0, 1}) (dword_8201690C), putting the viewport back over the whole
+  // target.
+  SetViewport(device, 0, 0, kTilingEndViewportSize, kTilingEndViewportSize, 0.0f, 1.0f);
   return 0;
 }
 
 //------------------------------------------------------------------------------
-// Occlusion queries report everything visible.
+// Occlusion queries, answered a frame late (render/occlusion.h).
 //------------------------------------------------------------------------------
 
-u32 D3DQuery_Issue_hook(u32 /*query*/, u32 /*issue_flags*/) {
+u32 D3DQuery_Issue_hook(u32 query, u32 issue_flags) {
+  occlusion::Issue(query, issue_flags);
   return 0;
 }
 
-u32 D3DQuery_GetData_hook(u32 /*query*/, mapped_u32 data, u32 size, u32 /*flags*/) {
+// Always S_OK: the answer never waits on the GPU.
+u32 D3DQuery_GetData_hook(u32 query, mapped_u32 data, u32 size, u32 /*flags*/) {
   if (data && size >= 4)
-    *data = kQueryVisiblePixels;
+    *data = occlusion::Result(query);
   return 0;
 }
 

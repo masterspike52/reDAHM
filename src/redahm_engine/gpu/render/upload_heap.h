@@ -28,6 +28,11 @@ UploadAllocation UploadBytesLocked(const void* data, u32 size, u32 alignment = 1
 // Called by the frame ring once the slot's fence has been awaited.
 void ResetUploadSlotLocked(u32 slot);
 
+// Identifies the upload memory allocations are made in now: it changes
+// whenever the current slot does or is reset, so memory allocated under one
+// generation may be referenced only while it is still current.
+u64 UploadGenerationLocked();
+
 // Bytes held by every slot's chunks, for the memory log.
 u64 UploadHeapBytesLocked();
 

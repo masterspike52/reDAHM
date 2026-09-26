@@ -6,13 +6,17 @@
 
 #include "core/log.h"
 #include "overlay/imgui_drawer.h"
+#include "pipeline/pipeline_cache.h"
 #include "present/present.h"
 #include "render/host.h"
 
 namespace redahm::gpu {
 
 bool Initialize(rex::ui::Window* window) {
-  return CreateHostDevice(window);
+  if (!CreateHostDevice(window))
+    return false;
+  StartPipelineWarmup();
+  return true;
 }
 
 void InstallOverlay(rex::ui::WindowedAppContext& app_context, rex::ui::ImGuiDrawer* drawer) {
@@ -45,6 +49,7 @@ void OnWindowResized() {
 }
 
 void Shutdown() {
+  StopPipelineWarmup();
   ShutdownHost();
 }
 

@@ -38,4 +38,16 @@ HostVertexDeclaration* RegisterVertexDeclaration(u32 declaration_va,
                                                  const d3d::VertexElement* elements);
 HostVertexDeclaration* FindVertexDeclaration(u32 declaration_va);
 
+// The shared declaration with this element layout hash, or nullptr when the
+// title has not created one this session.
+HostVertexDeclaration* FindVertexDeclarationByHash(u64 hash);
+
+// Counts new element layouts; unchanged means FindVertexDeclarationByHash
+// would answer as before.
+u64 VertexDeclarationGeneration();
+
+// Counts registrations; unchanged means FindVertexDeclaration would answer as
+// before for every address.
+u64 VertexDeclarationRegistrations();
+
 }  // namespace redahm::gpu
