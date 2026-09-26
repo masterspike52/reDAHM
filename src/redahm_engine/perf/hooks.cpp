@@ -1,11 +1,11 @@
 #include "redahm_engine/overlays/fps_overlay.h"
 #include "redahm_engine/gpu/core/frame_cost.h"
-#include "redahm_engine/graphics_settings.h"
+#include "redahm_engine/settings/graphics_settings.h"
 #include <rex/hook.h>
 #include <cstdint>
 #include <cstring>
 #include "generated/redahm_init.h"
-#include "redahm_logging.h"
+#include "redahm_engine/redahm_logging.h"
 #include <algorithm>
 #include <atomic>
 #include <bit>

@@ -27,7 +27,7 @@
 
 #include "generated/redahm_init.h"
 #include "redahm_engine/gpu/core/guest_memory.h"
-#include "redahm_logging.h"
+#include "redahm_engine/redahm_logging.h"
 
 REXCVAR_DEFINE_BOOL(redahm_dialog_trace, true, "POTF/Debug",
                     "Log each dialogue line's length and each FaceFX request");

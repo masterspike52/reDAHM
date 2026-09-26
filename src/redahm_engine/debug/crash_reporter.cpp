@@ -15,7 +15,7 @@
 // Everything the report needs (the table, the paths, symbol setup) is prepared
 // at install; the crash path only reads it.
 
-#include "redahm_engine/crash_reporter.h"
+#include "redahm_engine/debug/crash_reporter.h"
 
 #include <algorithm>
 #include <atomic>

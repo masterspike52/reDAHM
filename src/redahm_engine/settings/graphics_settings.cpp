@@ -28,7 +28,7 @@
 // run at most once a second until they succeed, and afterwards only the
 // cached objects' classes are rechecked.
 
-#include "redahm_engine/graphics_settings.h"
+#include "redahm_engine/settings/graphics_settings.h"
 
 #include <algorithm>
 #include <atomic>
@@ -46,8 +46,8 @@
 
 #include "redahm_engine/gpu/core/guest_memory.h"
 #include "redahm_engine/gpu/core/settings.h"
-#include "redahm_engine/native_foliage.h"
-#include "redahm_logging.h"
+#include "redahm_engine/perf/native_foliage.h"
+#include "redahm_engine/redahm_logging.h"
 
 REXCVAR_DEFINE_BOOL(redahm_decals, true, "POTF/Graphics", "Draw decals (scorch marks, blood, "
                                                          "signs projected onto surfaces)");

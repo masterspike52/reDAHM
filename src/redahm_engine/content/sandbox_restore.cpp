@@ -48,9 +48,9 @@
 #include <rex/types.h>
 
 #include "generated/redahm_init.h"
-#include "redahm_engine/graphics_settings.h"
+#include "redahm_engine/settings/graphics_settings.h"
 #include "redahm_engine/gpu/core/guest_memory.h"
-#include "redahm_logging.h"
+#include "redahm_engine/redahm_logging.h"
 
 REXCVAR_DEFINE_BOOL(redahm_restore_sandbox_missions, false, "POTF/Content",
                     "Restore Paradiso's cut sandbox mission (Big Willie's Deliveries)");

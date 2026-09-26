@@ -2,7 +2,7 @@
 #include <rex/cvar.h>
 #include <rex/ui/imgui_dialog.h>
 #include "imgui.h"
-#include "redahm_engine/graphics_menu.h"
+#include "redahm_engine/settings/graphics_menu.h"
 #include <algorithm>
 #include <cctype>
 #include <string>

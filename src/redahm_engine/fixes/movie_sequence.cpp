@@ -42,7 +42,7 @@
 #include <string>
 #include <thread>
 
-#include "redahm_logging.h"
+#include "redahm_engine/redahm_logging.h"
 
 namespace {
 

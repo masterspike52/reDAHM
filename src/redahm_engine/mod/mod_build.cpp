@@ -20,7 +20,7 @@
 // reads each package's header to find the texture packs' targets, then
 // builds in parallel.
 
-#include "redahm_engine/mod_build.h"
+#include "redahm_engine/mod/mod_build.h"
 
 #include <algorithm>
 #include <atomic>
@@ -36,8 +36,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "redahm_engine/mod_packages.h"
-#include "redahm_logging.h"
+#include "redahm_engine/mod/mod_packages.h"
+#include "redahm_engine/redahm_logging.h"
 
 namespace redahm::mods {
 

@@ -42,7 +42,7 @@
 // (single-mip textures: OriginalSize only, and both indices removed), and its
 // TextureFileCacheName dropped. External TFC mips aren't supported yet.
 
-#include "redahm_engine/mod_packages.h"
+#include "redahm_engine/mod/mod_packages.h"
 
 #include <algorithm>
 #include <cctype>

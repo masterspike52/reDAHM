@@ -1,30 +1,40 @@
-// GRAPHICS in the game's Options menu.
+// GRAPHICS and MODS in the game's Options menu.
 //
 // The in-game Options scene (UI_FrontEnd_InGame: UI_OptionsIG) lists its rows
 // in a CPUIStringList, MenuItems, cooked with three ListItems: GAMEPLAY
 // (gl.frntend.gmpl), Crypto Layout (gl.frntend.ccrp) and Saucer Layout
-// (gl.frntend.cufo). GRAPHICS is appended through the class's own AddListItem,
-// so it draws, highlights and scrolls like its neighbours.
+// (gl.frntend.cufo). GRAPHICS and MODS are appended through the class's own
+// AddListItem, so they draw, highlight and scroll like their neighbours.
 //
 // Choosing a row runs the scene's Kismet: the accept sound, a fade out, then a
 // CPSeqAct_Switch on the row picks a CPUIAction_FireTransition, which the
 // background scene (UI_InGameBackground) answers by flipping the menu box,
 // fading its row bars (CPUIImage_Bar1..9) to the transition's
 // m_NextSceneNumBars and opening m_SceneToOpen. The Switch has nothing wired to
-// a fourth row, so for GRAPHICS it is pointed at GAMEPLAY's link instead and
-// the GAMEPLAY scene (UI_GameOptions_IG) opens exactly as GAMEPLAY does. That
-// scene then serves as the graphics page: its title reads GRAPHICS, its
-// toggles and sliders are faded out and its rows list the setting categories
-// (DISPLAY, QUALITY, EFFECTS). A on a category lists its settings, one per row
-// ("RESOLUTION   1080P"); there left, right and A step the selected setting
-// and B returns to the categories. Settings apply as they change; B on the
-// categories reaches the game, which leaves through the scene's own
-// transition, and the config is saved.
+// a fourth or fifth row, so for ours it is pointed at GAMEPLAY's link instead
+// and the GAMEPLAY scene (UI_GameOptions_IG) opens exactly as GAMEPLAY does.
+// That scene then serves as our page: its title reads GRAPHICS or MODS, its
+// toggles and sliders are faded out and its rows are ours.
 //
-// The bar counts follow the rows: the Options scene opens with four bars
-// rather than three, the page with one per category, and the page fades the
-// background's bars itself as its views change. There are nine bars, so no
-// view shows more rows than that.
+// The graphics page lists the setting categories (DISPLAY, QUALITY, EFFECTS).
+// A on a category lists its settings, one per row ("RESOLUTION   1080P");
+// there left, right and A step the selected setting and B returns to the
+// categories. B on the categories reaches the game, which leaves through the
+// scene's own transition.
+//
+// The mods page lists the folders in mods/ ("RE-ENLIGHTENED   ON"), each
+// switched by its redahm_mod_ cvar (mod_loader.cpp): A toggles the selected
+// one, left turns it off and right on. Mods load as the game starts, so a
+// changed row says RESTART. B leaves as on the graphics page.
+//
+// On either page changes apply as they are made and X saves them to
+// redahm.toml; the title reads "GRAPHICS - X TO SAVE" while there is something
+// to save. Leaving without saving puts the last saved values back.
+//
+// The bar counts follow the rows: the Options scene opens with five bars
+// rather than three, a page with one per row, and the page fades the
+// background's bars itself as its views change. There are nine bars, so a
+// view longer than that scrolls.
 //
 // Guest layouts (KronosGame.u / Engine.u property order, checked against the
 // code that uses them):
@@ -46,7 +56,7 @@
 //   UCPUIAction_FireTransition: m_SceneToOpen at +236, m_NextSceneNumBars at
 //     +240, m_TransitionTypeClose at +244.
 
-#include "redahm_engine/graphics_menu.h"
+#include "redahm_engine/settings/graphics_menu.h"
 
 #include <algorithm>
 #include <array>
@@ -59,6 +69,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <rex/cvar.h>
@@ -69,10 +80,8 @@
 
 #include "generated/redahm_init.h"
 #include "redahm_engine/gpu/core/guest_memory.h"
-#include "redahm_logging.h"
-
-REXCVAR_DEFINE_BOOL(redahm_graphics_menu, true, "POTF/Graphics",
-                    "Add GRAPHICS to the Options menu");
+#include "redahm_engine/mod/mod_loader.h"
+#include "redahm_engine/redahm_logging.h"
 
 // Hooked, their originals run on the caller's own context, untouched:
 //   sub_82B03C48  UCPUIStringList render override (list, canvas)
@@ -146,14 +155,19 @@ constexpr std::u16string_view kGameplayKey = u"gl.frntend.gmpl";
 constexpr std::u16string_view kCryptoLayoutKey = u"gl.frntend.ccrp";
 constexpr std::u16string_view kLiteralKey = u"0";
 constexpr std::u16string_view kGraphicsText = u"GRAPHICS";
+constexpr std::u16string_view kModsText = u"MODS";
+constexpr std::u16string_view kNoModsText = u"NO MODS FOUND";
 constexpr u32 kStockItemCount = 3;
 constexpr i32 kGraphicsIndex = i32(kStockItemCount);
-constexpr u32 kItemCount = kStockItemCount + 1;
+constexpr i32 kModsIndex = kGraphicsIndex + 1;
+constexpr u32 kItemCount = kStockItemCount + 2;
 // The Options switch's output for GAMEPLAY.
 constexpr i32 kGameplayLink = 0;
-// Bars the Options scene is cooked with, and with GRAPHICS.
+// Bars the Options scene is cooked with, and with GRAPHICS and MODS.
 constexpr i32 kStockOptionsBars = 3;
 constexpr i32 kOptionsBars = i32(kItemCount);
+// The background scene's row bars (CPUIImage_Bar1..9).
+constexpr u32 kBarCount = 9;
 
 // X_INPUT_STATE: dwPacketNumber, then XINPUT_GAMEPAD.
 constexpr u32 kGamepad = 4;
@@ -164,11 +178,12 @@ constexpr u16 kPadLeft = 0x0004;
 constexpr u16 kPadRight = 0x0008;
 constexpr u16 kPadA = 0x1000;
 constexpr u16 kPadB = 0x2000;
+constexpr u16 kPadX = 0x4000;
 constexpr i16 kStickThreshold = 16000;
 
 // A widget counts as on screen while it has drawn this recently.
 constexpr auto kOnScreenFor = std::chrono::milliseconds(150);
-// How long an A press on GRAPHICS waits for the Options Kismet to reach its
+// How long an A press on GRAPHICS or MODS waits for the Options Kismet to reach its
 // switch (it fades the menu out first).
 constexpr auto kArmedFor = std::chrono::seconds(2);
 
@@ -367,6 +382,36 @@ void StepSetting(size_t index, int direction) {
 }
 
 //------------------------------------------------------------------------------
+// Mods
+//------------------------------------------------------------------------------
+
+// The mod folders, as found when the game started (a new one needs a restart
+// to get its cvar).
+const std::vector<redahm::mods::Mod>& ModList() {
+  static const std::vector<redahm::mods::Mod> mods = redahm::mods::Mods();
+  return mods;
+}
+
+bool ModEnabled(const redahm::mods::Mod& mod) {
+  return Lowercase(rex::cvar::GetFlagByName(mod.cvar)) == "true";
+}
+
+std::u16string ModRowText(const redahm::mods::Mod& mod) {
+  const bool enabled = ModEnabled(mod);
+  std::u16string text = mod.label;
+  text += enabled ? u"   ON" : u"   OFF";
+  if (enabled != mod.loaded)
+    text += u"   RESTART";
+  return text;
+}
+
+void SetMod(size_t index, bool enabled) {
+  const redahm::mods::Mod& mod = ModList()[index];
+  if (ModEnabled(mod) != enabled)
+    rex::cvar::SetFlagByName(mod.cvar, enabled ? "true" : "false");
+}
+
+//------------------------------------------------------------------------------
 // Guest objects
 //------------------------------------------------------------------------------
 
@@ -526,12 +571,23 @@ void CallFadeVirtual(PPCContext& ctx, uint8_t* base, u32 object, u32 slot, doubl
 
 enum class Mode : int { kIdle, kOpening, kActive };
 std::atomic<Mode> g_mode{Mode::kIdle};
-// When A was pressed on GRAPHICS, 0 when not waiting for the switch.
+// Which page the GAMEPLAY scene stands in for, set as it opens.
+enum class Page : int { kGraphics, kMods };
+std::atomic<Page> g_page{Page::kGraphics};
+// When A was pressed on GRAPHICS or MODS, 0 when not waiting for the switch.
 std::atomic<i64> g_armed_ns{0};
-// Presses on the graphics page, taken when the page next draws: left and
-// right step the selected setting, open enters the selected category and back
-// returns to the categories.
-enum Request : u32 { kPrevious = 1u << 0, kNext = 1u << 1, kOpen = 1u << 2, kBack = 1u << 3 };
+// Presses on the page, taken when the page next draws: left and right step
+// the selected setting (turn the selected mod off and on), open enters the
+// selected category, back returns to the categories and toggle flips the
+// selected mod.
+enum Request : u32 {
+  kPrevious = 1u << 0,
+  kNext = 1u << 1,
+  kOpen = 1u << 2,
+  kBack = 1u << 3,
+  kToggle = 1u << 4,
+  kSave = 1u << 5
+};
 std::atomic<u32> g_requests{0};
 // The selected row is a slider: holding left or right keeps stepping it.
 std::atomic<bool> g_slider_selected{false};
@@ -541,9 +597,14 @@ constexpr i64 kSliderRepeatIntervalNs = 60'000'000;
 std::atomic<int> g_category{-1};
 // The rows the view shows, as built.
 std::vector<std::u16string> g_rows;
-// Leaving the page puts the values back (unused: settings apply as they change
-// and leaving keeps them).
-std::atomic<bool> g_leave_reverts{false};
+// Changes apply as they are made; X saves them and leaving the page without
+// saving puts back the values last saved (or found as the page opened). The
+// page's cvars with those values, and whether any now differs.
+std::vector<std::pair<std::string, std::string>> g_saved_values;
+std::atomic<bool> g_unsaved{false};
+// When X last saved, for the title's note.
+std::atomic<i64> g_saved_ns{0};
+constexpr i64 kSavedNoteNs = 2'000'000'000;
 // Whether the page list holds the page's rows rather than GAMEPLAY's.
 bool g_rows_are_ours = false;
 // After the page swaps its rows the list's script leaves its first row faded
@@ -568,7 +629,6 @@ struct StockItem {
 };
 std::vector<StockItem> g_page_stock_items;
 std::u16string g_title_caption;
-std::vector<std::string> g_values_on_entry;
 
 std::mutex g_config_mutex;
 std::filesystem::path g_config_path;
@@ -593,6 +653,47 @@ void SaveConfig() {
     rex::cvar::SaveConfig(path);
 }
 
+// Every cvar the pages change, with its value: the settings, then the mods.
+std::vector<std::pair<std::string, std::string>> PageValues() {
+  std::vector<std::pair<std::string, std::string>> values;
+  for (const Setting& setting : Settings())
+    values.emplace_back(setting.cvar, rex::cvar::GetFlagByName(setting.cvar));
+  for (const redahm::mods::Mod& mod : ModList())
+    values.emplace_back(mod.cvar, rex::cvar::GetFlagByName(mod.cvar));
+  return values;
+}
+
+void MarkSaved() {
+  g_saved_values = PageValues();
+  g_unsaved.store(false, std::memory_order_release);
+}
+
+void UpdateUnsaved() {
+  g_unsaved.store(PageValues() != g_saved_values, std::memory_order_release);
+}
+
+// X: writes redahm.toml.
+void SaveChanges() {
+  SaveConfig();
+  MarkSaved();
+  g_saved_ns.store(NowNs(), std::memory_order_release);
+  RDAHM_INFO("[graphics menu] settings saved");
+}
+
+// Leaving without saving: the values last saved come back.
+void RevertChanges() {
+  int reverted = 0;
+  for (const auto& [cvar, value] : g_saved_values) {
+    if (rex::cvar::GetFlagByName(cvar) != value) {
+      rex::cvar::SetFlagByName(cvar, value);
+      ++reverted;
+    }
+  }
+  g_unsaved.store(false, std::memory_order_release);
+  if (reverted)
+    RDAHM_INFO("[graphics menu] {} unsaved change(s) put back", reverted);
+}
+
 //------------------------------------------------------------------------------
 // Options list
 //------------------------------------------------------------------------------
@@ -602,7 +703,8 @@ void ForgetPage();
 void OnOptionsListRender(u32 list) {
   if (ListItemCount(list) == kStockItemCount) {
     AddItem(list, kGraphicsText, kLiteralKey);
-    RDAHM_INFO("[graphics menu] added GRAPHICS to the Options list {:08X}", list);
+    AddItem(list, kModsText, kLiteralKey);
+    RDAHM_INFO("[graphics menu] added GRAPHICS and MODS to the Options list {:08X}", list);
   }
   // A page whose scene went away without its close transition (a level change
   // takes every scene down with it) is over.
@@ -614,14 +716,14 @@ void OnOptionsListRender(u32 list) {
 }
 
 //------------------------------------------------------------------------------
-// Graphics page (the GAMEPLAY scene)
+// Graphics and mods pages (the GAMEPLAY scene)
 //------------------------------------------------------------------------------
 
 // UCPUIStringList draws at most this many rows (from StartIndex) while its
 // flag +896 & 0x40000000 is set; the rest scroll. The GAMEPLAY list's window
-// fits its own rows, so the page widens it to its longest view, which the
-// window would otherwise scroll, hiding the first or last row, and puts it
-// back when the page is over.
+// fits its own rows, so the page widens it to its longest view (up to the nine
+// rows the bars mark), which the window would otherwise scroll, hiding the
+// first or last row, and puts it back when the page is over.
 constexpr u32 kVisibleRows = 1004;
 i32 g_stock_visible_rows = -1;
 
@@ -642,6 +744,7 @@ void RestoreVisibleRows(u32 list) {
 // The page's scene went away with the page still up; its list and window are
 // gone with it.
 void ForgetPage() {
+  RevertChanges();
   g_mode.store(Mode::kIdle, std::memory_order_release);
   g_page_list.store(0, std::memory_order_release);
   g_rows_are_ours = false;
@@ -663,16 +766,39 @@ std::vector<std::u16string> GraphicsRows() {
   return rows;
 }
 
+// The mods page's rows: one per mod folder.
+std::vector<std::u16string> ModRows() {
+  std::vector<std::u16string> rows;
+  for (const redahm::mods::Mod& mod : ModList())
+    rows.push_back(ModRowText(mod));
+  if (rows.empty())
+    rows.emplace_back(kNoModsText);
+  return rows;
+}
+
+bool OnModsPage() {
+  return g_page.load(std::memory_order_acquire) == Page::kMods;
+}
+
+// The rows a page opens on, which its opening transition marks with bars.
+i32 OpeningRows() {
+  return OnModsPage() ? std::clamp(i32(ModList().size()), 1, i32(kBarCount)) : kCategoryCount;
+}
+
 void BuildPageRows(PPCContext& ctx, uint8_t* base, u32 list) {
-  g_rows = GraphicsRows();
+  g_rows = OnModsPage() ? ModRows() : GraphicsRows();
   ClearList(list);
   for (const std::u16string& row : g_rows)
     AddItem(list, row, kLiteralKey);
   g_rows_are_ours = true;
   i32 longest = kCategoryCount;
-  for (int category = 0; category < kCategoryCount; ++category)
-    longest = std::max(longest, i32(CategorySettings(category).size()));
-  FitVisibleRows(list, longest);
+  if (OnModsPage()) {
+    longest = i32(g_rows.size());
+  } else {
+    for (int category = 0; category < kCategoryCount; ++category)
+      longest = std::max(longest, i32(CategorySettings(category).size()));
+  }
+  FitVisibleRows(list, std::min(longest, i32(kBarCount)));
 }
 
 void SelectRow(u32 list, i32 row) {
@@ -705,7 +831,6 @@ constexpr u32 kControllerSceneClient = 120;
 constexpr u32 kSceneClientActiveScenes = 192;
 constexpr std::u16string_view kBackgroundScene = u"UI_InGameBackground";
 constexpr std::u16string_view kBarPrefix = u"CPUIImage_Bar";
-constexpr u32 kBarCount = 9;
 constexpr u32 kMaxWidgetDepth = 8;
 
 std::array<u32, kBarCount> g_bars{};
@@ -796,7 +921,22 @@ void ShowView(PPCContext& ctx, uint8_t* base, u32 list, i32 selected) {
   Nudge(selected, g_rows.size());
 }
 
+void OnModsRequests(PPCContext& ctx, uint8_t* base, u32 list, u32 requests, i32 row) {
+  if (!(requests & (kPrevious | kNext | kToggle)) || row < 0 || row >= i32(ModList().size()))
+    return;
+  const size_t index = size_t(row);
+  if (requests & kToggle)
+    SetMod(index, !ModEnabled(ModList()[index]));
+  else
+    SetMod(index, (requests & kNext) != 0);
+  BuildPageRows(ctx, base, list);
+}
+
 void OnGraphicsRequests(PPCContext& ctx, uint8_t* base, u32 list, u32 requests, i32 row) {
+  if (OnModsPage()) {
+    OnModsRequests(ctx, base, list, requests, row);
+    return;
+  }
   const int category = g_category.load(std::memory_order_acquire);
   if (category < 0) {
     if ((requests & kOpen) && row >= 0 && row < kCategoryCount) {
@@ -839,30 +979,33 @@ void OnGameplayListRender(PPCContext& ctx, uint8_t* base, u32 list) {
     }
     BuildPageRows(ctx, base, list);
     g_page_list.store(list, std::memory_order_release);
-    RDAHM_INFO("[graphics menu] graphics page in {:08X}", list);
+    RDAHM_INFO("[graphics menu] {} page in {:08X}", OnModsPage() ? "mods" : "graphics", list);
   }
   g_page_list_drawn_ns.store(NowNs(), std::memory_order_release);
 
   const u32 requests = g_requests.exchange(0, std::memory_order_acq_rel);
   OnGraphicsRequests(ctx, base, list, requests, SelectedRow(list));
+  if (requests & kSave)
+    SaveChanges();
+  UpdateUnsaved();
   {
     const int shown = g_category.load(std::memory_order_acquire);
     const i32 selected = SelectedRow(list);
     bool slider = false;
-    if (shown >= 0) {
+    if (shown >= 0 && !OnModsPage()) {
       const std::vector<size_t> settings = CategorySettings(shown);
       slider = selected >= 0 && selected < i32(settings.size()) &&
                Settings()[settings[size_t(selected)]].slider.has_value();
     }
     g_slider_selected.store(slider, std::memory_order_release);
   }
-  // Every view fits the widened window, so none scrolls. The list's script
-  // still scrolls by the stock window it knows: selecting a lower row of a
-  // long category moved StartIndex on, and the shorter view after it then
+  // Every view that fits the widened window shouldn't scroll. The list's
+  // script still scrolls by the stock window it knows: selecting a lower row of
+  // a long category moved StartIndex on, and the shorter view after it then
   // started a row down, its first row gone. Keep the list at its top, with the
-  // same row selected.
+  // same row selected. A longer list of mods scrolls as the list likes.
   const i32 start = mem::Load<i32>(list + kStartIndex);
-  if (start != 0) {
+  if (start != 0 && g_rows.size() <= kBarCount) {
     static u32 logged = 0;
     if (logged++ < 4)
       RDAHM_INFO("[graphics menu] list scrolled to {}, back to the top", start);
@@ -880,16 +1023,29 @@ void OnGameplayListRender(PPCContext& ctx, uint8_t* base, u32 list) {
   HideGameplayValues(ctx, base, list);
 }
 
+// The page's title: its name, and whether X has something to save or just
+// saved it.
+std::u16string PageTitle() {
+  std::u16string title(OnModsPage() ? kModsText : kGraphicsText);
+  if (g_unsaved.load(std::memory_order_acquire))
+    title += u" - X TO SAVE";
+  else if (NowNs() - g_saved_ns.load(std::memory_order_acquire) < kSavedNoteNs)
+    title += u" - SAVED";
+  return title;
+}
+
 // The GAMEPLAY scene's title shares GAMEPLAY's key.
 void OnGameplayLabelRender(u32 label) {
   if (ReadFString(label + kLabelLocalizationKey) != kGameplayKey)
     return;
   const std::u16string caption = ReadFString(label + kLabelDrawCaption);
   const bool active = g_mode.load(std::memory_order_acquire) == Mode::kActive;
-  const bool ours = caption == kGraphicsText;
-  if (active && !ours) {
-    g_title_caption = caption;
-    if (const u32 text = g_label_scratch.Write(0, kGraphicsText))
+  const bool ours = caption.starts_with(kGraphicsText) || caption.starts_with(kModsText);
+  const std::u16string title = PageTitle();
+  if (active && caption != title) {
+    if (!ours)
+      g_title_caption = caption;
+    if (const u32 text = g_label_scratch.Write(0, title))
       AssignFString(label + kLabelDrawCaption, text);
   } else if (!active && ours && !g_title_caption.empty()) {
     if (const u32 text = g_label_scratch.Write(0, g_title_caption))
@@ -898,41 +1054,28 @@ void OnGameplayLabelRender(u32 label) {
 }
 
 void EnterPage() {
-  g_values_on_entry = CurrentValues();
-  g_leave_reverts.store(false, std::memory_order_release);
+  MarkSaved();
+  g_saved_ns.store(0, std::memory_order_release);
   g_requests.store(0, std::memory_order_release);
   g_category.store(-1, std::memory_order_release);
-  // The opening transition fades in the categories' bars.
-  g_bars_shown = kCategoryCount;
+  // The opening transition fades in the first view's bars.
+  g_bars_shown = OpeningRows();
   g_mode.store(Mode::kActive, std::memory_order_release);
-  RDAHM_INFO("[graphics menu] opening the graphics page");
+  RDAHM_INFO("[graphics menu] opening the {} page", OnModsPage() ? "mods" : "graphics");
 }
 
 void LeavePage() {
   g_mode.store(Mode::kIdle, std::memory_order_release);
-  if (g_leave_reverts.load(std::memory_order_acquire)) {
-    const std::vector<Setting>& settings = Settings();
-    for (size_t i = 0; i < settings.size() && i < g_values_on_entry.size(); ++i) {
-      if (CurrentValue(settings[i]) != g_values_on_entry[i])
-        rex::cvar::SetFlagByName(settings[i].cvar, g_values_on_entry[i]);
-    }
-    RDAHM_INFO("[graphics menu] left the graphics page, settings reverted");
-  } else {
-    SaveConfig();
-    RDAHM_INFO("[graphics menu] left the graphics page, settings saved");
-  }
+  RevertChanges();
+  RDAHM_INFO("[graphics menu] left the page");
 }
 
 //------------------------------------------------------------------------------
 // Hooks
 //------------------------------------------------------------------------------
 
-bool Enabled() {
-  return REXCVAR_GET(redahm_graphics_menu);
-}
-
 void OnListRender(PPCContext& ctx, uint8_t* base, u32 list) {
-  if (!list || !Enabled())
+  if (!list)
     return;
   (void)BootValues();
   LearnOwnerOffset(list);
@@ -956,7 +1099,7 @@ void OnListRender(PPCContext& ctx, uint8_t* base, u32 list) {
 }
 
 void OnLabelRender(u32 label) {
-  if (!label || !Enabled())
+  if (!label)
     return;
   // Only while the page is up or its title may still need putting back.
   if (g_mode.load(std::memory_order_acquire) != Mode::kActive && g_title_caption.empty())
@@ -966,11 +1109,9 @@ void OnLabelRender(u32 label) {
     OnGameplayLabelRender(label);
 }
 
-// Before the Options switch fires: an A press on GRAPHICS takes GAMEPLAY's
-// link. Returns the index to put back afterwards, or -1.
+// Before the Options switch fires: an A press on GRAPHICS or MODS takes
+// GAMEPLAY's link. Returns the index to put back afterwards, or -1.
 i32 OnSwitchActivated(u32 op) {
-  if (!Enabled())
-    return -1;
   const i64 armed = g_armed_ns.load(std::memory_order_acquire);
   if (!armed || NowNs() - armed >
                     std::chrono::duration_cast<std::chrono::nanoseconds>(kArmedFor).count())
@@ -980,8 +1121,9 @@ i32 OnSwitchActivated(u32 op) {
     return -1;
   const u32 indices = mem::Load<u32>(op + kSwitchIndices);
   const i32 index = mem::Load<i32>(indices);
-  if (index != kGraphicsIndex)
+  if (index != kGraphicsIndex && index != kModsIndex)
     return -1;
+  g_page.store(index == kModsIndex ? Page::kMods : Page::kGraphics, std::memory_order_release);
   g_armed_ns.store(0, std::memory_order_release);
   g_mode.store(Mode::kOpening, std::memory_order_release);
   mem::Store<i32>(indices, kGameplayLink);
@@ -989,7 +1131,7 @@ i32 OnSwitchActivated(u32 op) {
 }
 
 // Before a transition fires: the bar count it asks for, and whether it ends
-// the graphics page.
+// the page.
 struct TransitionPatch {
   i32 original_bars = 0;
   bool patched = false;
@@ -998,8 +1140,6 @@ struct TransitionPatch {
 
 TransitionPatch OnTransition(u32 op) {
   TransitionPatch patch;
-  if (!Enabled())
-    return patch;
   const bool close = mem::Load<u32>(op + kTransitionClose) != 0;
   const std::u16string scene = ObjectName(mem::Load<u32>(op + kTransitionSceneToOpen));
   const i32 bars = mem::Load<i32>(op + kTransitionNumBars);
@@ -1007,7 +1147,7 @@ TransitionPatch OnTransition(u32 op) {
 
   i32 wanted = bars;
   if (mode == Mode::kOpening && !close) {
-    wanted = kCategoryCount;
+    wanted = OpeningRows();
     EnterPage();
   } else if (bars == kStockOptionsBars) {
     const bool opens_options = !close && scene == kOptionsScene;
@@ -1026,10 +1166,10 @@ TransitionPatch OnTransition(u32 op) {
   return patch;
 }
 
-// After the pad is read: arms the GRAPHICS row, and on the graphics page turns
+// After the pad is read: arms the GRAPHICS and MODS rows, and on a page turns
 // left and right into setting changes the game never sees.
 void OnPadState(u32 state, u32 result, u32 user) {
-  if (!Enabled() || result != 0 || !state || user >= 4)
+  if (result != 0 || !state || user >= 4)
     return;
   static std::array<u16, 4> held{};
   static std::array<i32, 4> stick{};
@@ -1052,9 +1192,19 @@ void OnPadState(u32 state, u32 result, u32 user) {
     // Categories: A opens one; B goes on to the game, which leaves the page.
     // In a category: left, right and A step the setting; B returns to the
     // categories.
+    // Mods: A toggles the mod, left turns it off and right on; B goes on to
+    // the game.
     const bool in_category = g_category.load(std::memory_order_acquire) >= 0;
     u32 requests = 0;
-    if (in_category) {
+    if (OnModsPage()) {
+      if ((pressed & kPadLeft) || (stick_moved && stick_x < 0))
+        requests |= kPrevious;
+      if ((pressed & kPadRight) || (stick_moved && stick_x > 0))
+        requests |= kNext;
+      if (pressed & kPadA)
+        requests |= kToggle;
+      swallowed[user] |= u16(pressed & kPadA);
+    } else if (in_category) {
       if ((pressed & kPadLeft) || (stick_moved && stick_x < 0))
         requests |= kPrevious;
       if ((pressed & (kPadRight | kPadA)) || (stick_moved && stick_x > 0))
@@ -1084,6 +1234,10 @@ void OnPadState(u32 state, u32 result, u32 user) {
         requests |= kOpen;
       swallowed[user] |= u16(pressed & kPadA);
     }
+    // Either page: X saves.
+    if (pressed & kPadX)
+      requests |= kSave;
+    swallowed[user] |= u16(pressed & kPadX);
     if (requests)
       g_requests.fetch_or(requests, std::memory_order_acq_rel);
     u16 out = u16(buttons & ~(kPadLeft | kPadRight | swallowed[user]));
@@ -1113,7 +1267,8 @@ void OnPadState(u32 state, u32 result, u32 user) {
 
   const u32 list = g_options_list.load(std::memory_order_acquire);
   if (mode == Mode::kIdle && (pressed & kPadA) && list && DrawnRecently(g_options_list_drawn_ns) &&
-      ListItemCount(list) == kItemCount && SelectedRow(list) == kGraphicsIndex)
+      ListItemCount(list) == kItemCount &&
+      (SelectedRow(list) == kGraphicsIndex || SelectedRow(list) == kModsIndex))
     g_armed_ns.store(NowNs(), std::memory_order_release);
 }
 

@@ -15,23 +15,29 @@ include(generated/rexglue.cmake)
 # Sources
 set(REDAHM_SOURCES
     src/main.cpp
-    src/redahm_engine/hooks.cpp
-    src/redahm_engine/dlc_unlock.cpp
-    src/redahm_engine/graphics_menu.cpp
-    src/redahm_engine/graphics_settings.cpp
-    src/redahm_engine/ufo_stealth.cpp
-    src/redahm_engine/native_foliage.cpp
-    src/redahm_engine/native_material.cpp
-    src/redahm_engine/native_scene.cpp
-    src/redahm_engine/kynapse_unload.cpp
-    src/redahm_engine/crash_reporter.cpp
-    src/redahm_engine/movie_sequence.cpp
-    src/redahm_engine/mission_audio.cpp
-    src/redahm_engine/sandbox_restore.cpp
-    src/redahm_engine/dialog_trace.cpp
-    src/redahm_engine/mod_loader.cpp
-    src/redahm_engine/mod_build.cpp
-    src/redahm_engine/mod_packages.cpp
+    # Unlocks and restored content
+    src/redahm_engine/content/dlc_unlock.cpp
+    src/redahm_engine/content/sandbox_restore.cpp
+    # Crash reporting and traces
+    src/redahm_engine/debug/crash_reporter.cpp
+    src/redahm_engine/debug/dialog_trace.cpp
+    # Game bug fixes
+    src/redahm_engine/fixes/kynapse_unload.cpp
+    src/redahm_engine/fixes/mission_audio.cpp
+    src/redahm_engine/fixes/movie_sequence.cpp
+    src/redahm_engine/fixes/ufo_stealth.cpp
+    # Drop-in mods
+    src/redahm_engine/mod/mod_build.cpp
+    src/redahm_engine/mod/mod_loader.cpp
+    src/redahm_engine/mod/mod_packages.cpp
+    # Engine performance: frame pacing, allocator, native rewrites
+    src/redahm_engine/perf/hooks.cpp
+    src/redahm_engine/perf/native_foliage.cpp
+    src/redahm_engine/perf/native_material.cpp
+    src/redahm_engine/perf/native_scene.cpp
+    # Options menu pages and the settings they drive
+    src/redahm_engine/settings/graphics_menu.cpp
+    src/redahm_engine/settings/graphics_settings.cpp
 )
 
 if(WIN32)
